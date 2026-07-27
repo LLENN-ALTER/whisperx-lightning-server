@@ -1,4 +1,36 @@
-def rebuild_segments_smart(result, max_chars_per_line=38, max_gap_seconds=0.6):
+import os
+from fastapi import FastAPI, HTTPException, Header, Depends
+from pydantic import BaseModel
+from typing import List, Dict, Any, Optional
+from lightning_sdk import Studio
+
+app = FastAPI(
+    title="SRT Suite - WhisperX & Studio Controller",
+    version="1.0.0"
+)
+
+# ==========================================
+# CONFIGURAZIONE AMBIENTE E STUDIO
+# ==========================================
+APP_SECRET_KEY = os.getenv("APP_SECRET_KEY", "SRT_SUITE_SECRET_TOKEN_2026")
+STUDIO_NAME = os.getenv("LIGHTNING_STUDIO_NAME", "gpu-studio")
+TEAMSPACE = os.getenv("LIGHTNING_TEAMSPACE", "get-gpu-project")
+USER_NAME = os.getenv("LIGHTNING_USER", "xmauri99")
+
+
+def verify_token(authorization: str = Header(None)):
+    """Verifica che la richiesta arrivi dall'app SRT Suite autorizzata."""
+    if not authorization or authorization != f"Bearer {APP_SECRET_KEY}":
+        raise HTTPException(
+            status_code=401, 
+            detail="Non autorizzato. Token di sicurezza mancante o errato."
+        )
+
+
+# ==========================================
+# FUNZIONE DI SMART REBUILDING SOTTOTITOLI
+# ==========================================
+def rebuild_segments_smart(result: dict, max_chars_per_line: int = 38, max_gap_seconds: float = 0.6):
     """
     Riorganizza i sottotitoli a livello di singola parola per:
     1. Limitare RIGOROSAMENTE il sottotitolo a MAX 2 RIGHE totali (circa 76-80 caratteri max per blocco).
@@ -66,11 +98,7 @@ def rebuild_segments_smart(result, max_chars_per_line=38, max_gap_seconds=0.6):
             last_word_str = current_words[-1]["word"]
             prev_word_has_punctuation = any(last_word_str.endswith(p) for p in [".", "?", "!", ",", ";"])
 
-        # CONDITTIONAL SPLIT (Forza la chiusura del sottotitolo):
-        # 1. Cambio dello speaker (garantisce 1 riga/blocco per speaker ed evita sovrapposizioni)
-        # 2. Pausa di silenzio > 0.6s
-        # 3. Superamento del limite fisico di 2 RIGHE (MAX_BLOCK_CHARS)
-        # 4. Superamento della 1ª riga SE siamo su una punteggiatura naturale
+        # CONDITIONAL SPLIT (Forza la chiusura del sottotitolo):
         must_split = (
             speaker_changed 
             or time_gap 
@@ -101,3 +129,67 @@ def rebuild_segments_smart(result, max_chars_per_line=38, max_gap_seconds=0.6):
         commit_segment(current_words, current_start, last_end, current_speaker)
 
     return new_segments
+
+
+# ==========================================
+# SCHEMI DATI PER GLI ENDPOINT FASTAPI
+# ==========================================
+class RebuildRequest(BaseModel):
+    result: Dict[str, Any]
+    max_chars_per_line: Optional[int] = 38
+    max_gap_seconds: Optional[float] = 0.6
+
+
+# ==========================================
+# ENDPOINT API
+# ==========================================
+@app.get("/")
+def read_root():
+    return {"status": "online", "service": "SRT Suite Backend API"}
+
+
+@app.post("/api/v1/subtitles/rebuild")
+def process_subtitles(request: RebuildRequest):
+    """Endpoint per riorganizzare i sottotitoli usando rebuild_segments_smart."""
+    try:
+        updated_segments = rebuild_segments_smart(
+            result=request.result,
+            max_chars_per_line=request.max_chars_per_line,
+            max_gap_seconds=request.max_gap_seconds
+        )
+        return {"status": "success", "segments": updated_segments}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore durante l'elaborazione dei sottotitoli: {str(e)}")
+
+
+@app.post("/api/v1/studio/start")
+def start_studio(authorized: None = Depends(verify_token)):
+    """Avvia l'istanza di Lightning Studio."""
+    try:
+        s = Studio(name=STUDIO_NAME, teamspace=TEAMSPACE, user=USER_NAME)
+        s.start()
+        return {"status": "success", "message": f"Studio '{STUDIO_NAME}' avviato con successo!"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore nell'avvio dello Studio: {str(e)}")
+
+
+@app.post("/api/v1/studio/stop")
+def stop_studio(authorized: None = Depends(verify_token)):
+    """Arresta l'istanza di Lightning Studio per fermare il consumo dei crediti."""
+    try:
+        s = Studio(name=STUDIO_NAME, teamspace=TEAMSPACE, user=USER_NAME)
+        s.stop()
+        return {"status": "success", "message": f"Studio '{STUDIO_NAME}' arrestato con successo!"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore nell'arresto dello Studio: {str(e)}")
+
+
+@app.get("/api/v1/studio/status")
+def get_status(authorized: None = Depends(verify_token)):
+    """Recupera lo stato attuale dello Studio."""
+    try:
+        s = Studio(name=STUDIO_NAME, teamspace=TEAMSPACE, user=USER_NAME)
+        return {"status": "success", "stage": str(s.status.stage)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore nel recupero dello stato: {str(e)}")
+        
