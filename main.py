@@ -32,22 +32,9 @@ LIGHTNING_STUDIO_URL = os.getenv("LIGHTNING_STUDIO_URL", "https://8001-01kyf6teb
 TEAMSPACE = os.getenv("LIGHTNING_TEAMSPACE", "get-gpu-project")
 USER_ORG = os.getenv("LIGHTNING_USER_ORG", "xmauri99-org")
 
-
-def verify_token(authorization: str = Header(None)):
-    """Verifica che la richiesta arrivi dall'app SRT Suite autorizzata."""
-    if not authorization or authorization != f"Bearer {APP_SECRET_KEY}":
-        raise HTTPException(
-            status_code=401, 
-            detail="Non autorizzato. Token di sicurezza mancante o errato."
-        )
-
-
-# Imposta le variabili per il comportamento predefinito dell'SDK Lightning
+# Configura l'API Key globale per l'SDK
 if LIGHTNING_API_KEY:
     os.environ["LIGHTNING_API_KEY"] = LIGHTNING_API_KEY
-    os.environ["LIGHTNING_USER"] = USER_ORG
-    os.environ["LIGHTNING_ORG"] = USER_ORG
-    os.environ["LIGHTNING_TEAMSPACE"] = TEAMSPACE
 
 
 # ==========================================
@@ -152,6 +139,15 @@ class RebuildRequest(BaseModel):
 # ==========================================
 # ENDPOINT API (Proxy & Controllo Studio)
 # ==========================================
+def verify_token(authorization: str = Header(None)):
+    """Verifica che la richiesta arrivi dall'app SRT Suite autorizzata."""
+    if not authorization or authorization != f"Bearer {APP_SECRET_KEY}":
+        raise HTTPException(
+            status_code=401, 
+            detail="Non autorizzato. Token di sicurezza mancante o errato."
+        )
+
+
 @app.get("/")
 @app.get("/health")
 def read_root():
@@ -200,9 +196,10 @@ def process_subtitles(request: RebuildRequest):
 # CONTROL ENDPOINTS (via Official Lightning SDK)
 # ==========================================
 def _get_lightning_studio():
-    """Tenta l'istanziazione dello Studio provando le combinazioni possibili di identificatori."""
+    """Tenta l'istanziazione dello Studio provando i formati di percorso esatti dell'SDK."""
     candidates = [
         f"{TEAMSPACE}/{LIGHTNING_STUDIO_NAME}",
+        f"{USER_ORG}/{LIGHTNING_STUDIO_NAME}",
         f"{USER_ORG}/{TEAMSPACE}/{LIGHTNING_STUDIO_NAME}",
         LIGHTNING_STUDIO_NAME,
         LIGHTNING_STUDIO_ID
@@ -211,10 +208,11 @@ def _get_lightning_studio():
     last_err = None
     for target in candidates:
         try:
-            print(f"🔍 Tentativo connessione SDK Studio con target: '{target}'")
-            s = Studio(name=target)
+            print(f"🔍 Tentativo SDK Studio target: '{target}'")
+            s = Studio(name=target, api_key=LIGHTNING_API_KEY)
             return s
         except Exception as e:
+            print(f"⚠️ Fallito '{target}': {str(e)}")
             last_err = e
             
     raise Exception(f"Impossibile collegare lo Studio tramite SDK. Ultimo errore: {str(last_err)}")
@@ -229,10 +227,10 @@ async def start_studio(authorized: None = Depends(verify_token)):
         raise HTTPException(status_code=500, detail="lightning-sdk non installato.")
 
     try:
-        print(f"🚀 Avvio Studio tramite SDK...")
+        print("🚀 Avvio Studio tramite SDK...")
         s = _get_lightning_studio()
         s.start()
-        return {"status": "success", "message": f"Studio avviato con successo!"}
+        return {"status": "success", "message": "Studio avviato con successo!"}
     except Exception as e:
         print(f"❌ Errore SDK START: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Errore SDK Lightning: {str(e)}")
@@ -247,10 +245,10 @@ async def stop_studio(authorized: None = Depends(verify_token)):
         raise HTTPException(status_code=500, detail="lightning-sdk non installato.")
 
     try:
-        print(f"🛑 Arresto Studio tramite SDK...")
+        print("🛑 Arresto Studio tramite SDK...")
         s = _get_lightning_studio()
         s.stop()
-        return {"status": "success", "message": f"Studio arrestato con successo!"}
+        return {"status": "success", "message": "Studio arrestato con successo!"}
     except Exception as e:
         print(f"❌ Errore SDK STOP: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Errore SDK Lightning: {str(e)}")
