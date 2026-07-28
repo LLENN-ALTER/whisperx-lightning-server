@@ -30,16 +30,16 @@ LIGHTNING_STUDIO_ID = os.getenv("LIGHTNING_STUDIO_ID", "01kyf6tebbywg1d835f6ptkg
 LIGHTNING_STUDIO_NAME = os.getenv("LIGHTNING_STUDIO_NAME", "gpu-studio")
 LIGHTNING_STUDIO_URL = os.getenv("LIGHTNING_STUDIO_URL", "https://8001-01kyf6tebbywg1d835f6ptkgt5.cloudspaces.litng.ai")
 
-# Dati utente garantiti (se os.getenv restituisce None o stringa vuota, forza il valore)
+# Dati organizzazione garantiti
 USER_NAME = os.getenv("LIGHTNING_USER") or "xmauri99"
-TEAMSPACE = os.getenv("LIGHTNING_TEAMSPACE") or "xmauri99-org"
+ORG_NAME = os.getenv("LIGHTNING_TEAMSPACE") or "xmauri99-org"
 
-# Configurazione variabili d'ambiente ufficiali usate internamente da Lightning SDK
+# Configurazione variabili d'ambiente usate internamente dall'SDK
 if LIGHTNING_API_KEY:
     os.environ["LIGHTNING_API_KEY"] = LIGHTNING_API_KEY
 os.environ["LIGHTNING_USER"] = USER_NAME
 os.environ["LIGHTNING_USERNAME"] = USER_NAME
-os.environ["LIGHTNING_USER_ORG"] = USER_NAME
+os.environ["LIGHTNING_USER_ORG"] = ORG_NAME
 
 
 # ==========================================
@@ -199,42 +199,42 @@ def process_subtitles(request: RebuildRequest):
 # CONTROL ENDPOINTS (via Official Lightning SDK)
 # ==========================================
 def _get_lightning_studio():
-    """Tenta la connessione con l'SDK usando la sintassi diretta per Studio."""
+    """Tenta la connessione con l'SDK usando l'organizzazione 'xmauri99-org'."""
     last_err = "Nessun tentativo riuscito"
 
-    # Tentativo 1: Nome + Utente + Teamspace
+    # Tentativo 1: Con parametro ORG (Consigliato dall'errore dell'SDK)
     try:
-        print(f"🔍 Tentativo 1 Studio(name='{LIGHTNING_STUDIO_NAME}', user='{USER_NAME}', teamspace='{TEAMSPACE}')")
-        return Studio(name=LIGHTNING_STUDIO_NAME, user=USER_NAME, teamspace=TEAMSPACE)
+        print(f"🔍 Tentativo 1 Studio(name='{LIGHTNING_STUDIO_NAME}', org='{ORG_NAME}')")
+        return Studio(name=LIGHTNING_STUDIO_NAME, org=ORG_NAME)
     except Exception as err:
         last_err = str(err)
         print(f"⚠️ Tentativo 1 fallito: {err}")
 
-    # Tentativo 2: Nome + Utente
+    # Tentativo 2: Con parametro ORG e TEAMSPACE di default
     try:
-        print(f"🔍 Tentativo 2 Studio(name='{LIGHTNING_STUDIO_NAME}', user='{USER_NAME}')")
-        return Studio(name=LIGHTNING_STUDIO_NAME, user=USER_NAME)
+        print(f"🔍 Tentativo 2 Studio(name='{LIGHTNING_STUDIO_NAME}', teamspace='default', org='{ORG_NAME}')")
+        return Studio(name=LIGHTNING_STUDIO_NAME, teamspace="default", org=ORG_NAME)
     except Exception as err:
         last_err = str(err)
         print(f"⚠️ Tentativo 2 fallito: {err}")
 
-    # Tentativo 3: ID + Utente
+    # Tentativo 3: ID Studio con parametro ORG
     try:
-        print(f"🔍 Tentativo 3 Studio(name='{LIGHTNING_STUDIO_ID}', user='{USER_NAME}')")
-        return Studio(name=LIGHTNING_STUDIO_ID, user=USER_NAME)
+        print(f"🔍 Tentativo 3 Studio(name='{LIGHTNING_STUDIO_ID}', org='{ORG_NAME}')")
+        return Studio(name=LIGHTNING_STUDIO_ID, org=ORG_NAME)
     except Exception as err:
         last_err = str(err)
         print(f"⚠️ Tentativo 3 fallito: {err}")
 
-    # Tentativo 4: ID + Teamspace
+    # Tentativo 4: Solo Nome Studio
     try:
-        print(f"🔍 Tentativo 4 Studio(name='{LIGHTNING_STUDIO_ID}', teamspace='{TEAMSPACE}')")
-        return Studio(name=LIGHTNING_STUDIO_ID, teamspace=TEAMSPACE)
+        print(f"🔍 Tentativo 4 Studio(name='{LIGHTNING_STUDIO_NAME}')")
+        return Studio(name=LIGHTNING_STUDIO_NAME)
     except Exception as err:
         last_err = str(err)
         print(f"⚠️ Tentativo 4 fallito: {err}")
 
-    # Tentativo 5: Solo ID
+    # Tentativo 5: Solo ID Studio
     try:
         print(f"🔍 Tentativo 5 Studio('{LIGHTNING_STUDIO_ID}')")
         return Studio(LIGHTNING_STUDIO_ID)
@@ -301,3 +301,4 @@ async def get_status(authorized: None = Depends(verify_token)):
 @app.get("/api/v1/credits")
 def get_credits(authorized: None = Depends(verify_token)):
     return {"status": "success", "credits": 14.21}
+    
