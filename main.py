@@ -1,8 +1,7 @@
 import os
 import shutil
 import tempfile
-import torch
-import whisperx
+import requests
 from typing import List, Dict, Any, Optional
 
 from fastapi import FastAPI, HTTPException, Header, Depends, File, UploadFile
@@ -10,29 +9,12 @@ from pydantic import BaseModel
 from lightning_sdk import Studio
 
 # ==========================================
-# INIZIALIZZAZIONE FASTAPI E WHISPERX
+# INIZIALIZZAZIONE FASTAPI
 # ==========================================
 app = FastAPI(
-    title="SRT Suite - WhisperX & Studio Controller",
+    title="SRT Suite - Render Proxy & Studio Controller",
     version="1.0.0"
 )
-
-# Configurazione dispositivo HW
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-BATCH_SIZE = 16  # Riduci a 8 o 4 se noti problemi di memoria GPU (OOM)
-COMPUTE_TYPE = "float16" if torch.cuda.is_available() else "int8"
-HF_TOKEN = os.getenv("HF_TOKEN", "TUO_HUGGINGFACE_TOKEN_QUI")
-
-print(f"⚡ Inizializzazione WhisperX su dispositivo: {DEVICE} ({COMPUTE_TYPE})...")
-whisper_model = whisperx.load_model("large-v2", DEVICE, compute_type=COMPUTE_TYPE, language="it")
-
-# Carica la pipeline per la diarizzazione degli speaker
-try:
-    diarize_model = whisperx.DiarizationPipeline(use_auth_token=HF_TOKEN, device=DEVICE)
-    print("✅ Modello di Diarizzazione caricato con successo!")
-except Exception as e:
-    diarize_model = None
-    print(f"⚠️ Impossibile caricare il modello di Diarizzazione: {e}")
 
 # ==========================================
 # CONFIGURAZIONE AMBIENTE E STUDIO
@@ -41,6 +23,9 @@ APP_SECRET_KEY = os.getenv("APP_SECRET_KEY", "SRT_SUITE_SECRET_TOKEN_2026")
 STUDIO_NAME = os.getenv("LIGHTNING_STUDIO_NAME", "gpu-studio")
 TEAMSPACE = os.getenv("LIGHTNING_TEAMSPACE", "get-gpu-project")
 USER_NAME = os.getenv("LIGHTNING_USER", "xmauri99")
+
+# URL dinamico di Lightning (può essere letto da Firebase o da Env Variable)
+LIGHTNING_STUDIO_URL = os.getenv("LIGHTNING_STUDIO_URL", "")
 
 
 def verify_token(authorization: str = Header(None)):
@@ -56,12 +41,7 @@ def verify_token(authorization: str = Header(None)):
 # FUNZIONE DI SMART REBUILDING SOTTOTITOLI
 # ==========================================
 def rebuild_segments_smart(result: dict, max_chars_per_line: int = 38, max_gap_seconds: float = 0.6):
-    """
-    Riorganizza i sottotitoli a livello di singola parola per:
-    1. Limitare RIGOROSAMENTE il sottotitolo a MAX 2 RIGHE totali.
-    2. Spezzare IMMEDIATAMENTE quando cambia lo speaker.
-    3. Tagliare basandosi su punteggiatura e pause.
-    """
+    """Riorganizza i sottotitoli a livello di singola parola per MAX 2 RIGHE."""
     all_words = []
     
     for segment in result.get("segments", []):
@@ -148,7 +128,7 @@ def rebuild_segments_smart(result: dict, max_chars_per_line: int = 38, max_gap_s
 
 
 # ==========================================
-# SCHEMI DATI E ENDPOINT API
+# SCHEMI DATI PER GLI ENDPOINT FASTAPI
 # ==========================================
 class RebuildRequest(BaseModel):
     result: Dict[str, Any]
@@ -156,48 +136,37 @@ class RebuildRequest(BaseModel):
     max_gap_seconds: Optional[float] = 0.6
 
 
+# ==========================================
+# ENDPOINT API (Proxy & Controllo Studio)
+# ==========================================
 @app.get("/")
 @app.get("/health")
 def read_root():
-    return {"status": "online", "service": "SRT Suite Backend API"}
+    return {"status": "online", "service": "SRT Suite Proxy API"}
 
 
 @app.post("/transcribe")
 @app.post("/api/v1/transcribe")
 async def transcribe_audio(file: UploadFile = File(...)):
-    temp_path = None
+    """
+    Inoltra il file audio allo Studio Lightning AI per la trascrizione reale.
+    """
+    if not LIGHTNING_STUDIO_URL:
+        raise HTTPException(status_code=500, detail="LIGHTNING_STUDIO_URL non configurato su Render.")
+        
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{file.filename}") as temp_file:
-            shutil.copyfileobj(file.file, temp_file)
-            temp_path = temp_file.name
-
-        # 1. Trascrizione
-        audio = whisperx.load_audio(temp_path)
-        result = whisper_model.transcribe(audio, batch_size=BATCH_SIZE)
-
-        # 2. Alignment
-        language_code = result.get("language", "it")
-        model_a, metadata = whisperx.load_align_model(language_code=language_code, device=DEVICE)
-        result = whisperx.align(result["segments"], model_a, metadata, audio, DEVICE, return_char_alignments=False)
-
-        # 3. Diarizzazione (se disponibile)
-        if diarize_model is not None:
-            try:
-                diarize_segments = diarize_model(audio)
-                result = whisperx.assign_word_speakers(diarize_segments, result)
-            except Exception as d_err:
-                print(f"Errore durante la diarizzazione: {d_err}")
-
-        # 4. Smart Rebuilding
-        result["segments"] = rebuild_segments_smart(result)
-
-        return result
-
+        # Inoltra la richiesta Multipart direttamente al server Lightning AI
+        files = {"file": (file.filename, await file.read(), file.content_type)}
+        target_url = f"{LIGHTNING_STUDIO_URL.rstrip('/')}/transcribe"
+        
+        response = requests.post(target_url, files=files, timeout=600)
+        
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=response.text)
+            
+        return response.json()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Errore durante la trascrizione: {str(e)}")
-    finally:
-        if temp_path and os.path.exists(temp_path):
-            os.remove(temp_path)
+        raise HTTPException(status_code=500, detail=f"Errore proxy verso Lightning Studio: {str(e)}")
 
 
 @app.post("/api/v1/subtitles/rebuild")
