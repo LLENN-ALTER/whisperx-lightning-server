@@ -30,13 +30,16 @@ LIGHTNING_STUDIO_ID = os.getenv("LIGHTNING_STUDIO_ID", "01kyf6tebbywg1d835f6ptkg
 LIGHTNING_STUDIO_NAME = os.getenv("LIGHTNING_STUDIO_NAME", "gpu-studio")
 LIGHTNING_STUDIO_URL = os.getenv("LIGHTNING_STUDIO_URL", "https://8001-01kyf6tebbywg1d835f6ptkgt5.cloudspaces.litng.ai")
 
-# Mappatura esatta sulle tue variabili reali di Render
-USER_NAME = os.getenv("LIGHTNING_USER", "xmauri99")
-TEAMSPACE = os.getenv("LIGHTNING_TEAMSPACE", "xmauri99-org")
+# Dati utente garantiti (se os.getenv restituisce None o stringa vuota, forza il valore)
+USER_NAME = os.getenv("LIGHTNING_USER") or "xmauri99"
+TEAMSPACE = os.getenv("LIGHTNING_TEAMSPACE") or "xmauri99-org"
 
-# Configurazione variabili d'ambiente ufficiali per Lightning SDK
+# Configurazione variabili d'ambiente ufficiali usate internamente da Lightning SDK
 if LIGHTNING_API_KEY:
     os.environ["LIGHTNING_API_KEY"] = LIGHTNING_API_KEY
+os.environ["LIGHTNING_USER"] = USER_NAME
+os.environ["LIGHTNING_USERNAME"] = USER_NAME
+os.environ["LIGHTNING_USER_ORG"] = USER_NAME
 
 
 # ==========================================
@@ -196,26 +199,44 @@ def process_subtitles(request: RebuildRequest):
 # CONTROL ENDPOINTS (via Official Lightning SDK)
 # ==========================================
 def _get_lightning_studio():
-    """Connette lo Studio provando le combinazioni valide con l'utente e teamspace di Render."""
-    candidates = [
-        {"name": LIGHTNING_STUDIO_NAME, "teamspace": TEAMSPACE, "user": USER_NAME},
-        {"name": LIGHTNING_STUDIO_NAME, "user": USER_NAME},
-        {"name": LIGHTNING_STUDIO_ID, "user": USER_NAME},
-        {"name": LIGHTNING_STUDIO_ID, "teamspace": TEAMSPACE},
-        {"name": LIGHTNING_STUDIO_ID}
-    ]
+    """Tenta la connessione con l'SDK usando la sintassi diretta per Studio."""
     
-    last_err = None
-    for kw in candidates:
-        try:
-            print(f"🔍 Connessione Studio con parametri: {kw}")
-            s = Studio(**kw)
-            return s
-        except Exception as e:
-            print(f"⚠️ Fallito {kw}: {str(e)}")
-            last_err = e
+    # Tentativo 1: Nome + Utente + Teamspace
+    try:
+        print(f"🔍 Tentativo 1 Studio(name='{LIGHTNING_STUDIO_NAME}', user='{USER_NAME}', teamspace='{TEAMSPACE}')")
+        return Studio(name=LIGHTNING_STUDIO_NAME, user=USER_NAME, teamspace=TEAMSPACE)
+    except Exception as e:
+        print(f"⚠️ Tentativo 1 fallito: {e}")
 
-    raise Exception(f"Impossibile collegare lo Studio tramite SDK. Ultimo errore: {str(last_err)}")
+    # Tentativo 2: Nome + Utente
+    try:
+        print(f"🔍 Tentativo 2 Studio(name='{LIGHTNING_STUDIO_NAME}', user='{USER_NAME}')")
+        return Studio(name=LIGHTNING_STUDIO_NAME, user=USER_NAME)
+    except Exception as e:
+        print(f"⚠️ Tentativo 2 fallito: {e}")
+
+    # Tentativo 3: ID + Utente
+    try:
+        print(f"🔍 Tentativo 3 Studio(name='{LIGHTNING_STUDIO_ID}', user='{USER_NAME}')")
+        return Studio(name=LIGHTNING_STUDIO_ID, user=USER_NAME)
+    except Exception as e:
+        print(f"⚠️ Tentativo 3 fallito: {e}")
+
+    # Tentativo 4: ID + Teamspace
+    try:
+        print(f"🔍 Tentativo 4 Studio(name='{LIGHTNING_STUDIO_ID}', teamspace='{TEAMSPACE}')")
+        return Studio(name=LIGHTNING_STUDIO_ID, teamspace=TEAMSPACE)
+    except Exception as e:
+        print(f"⚠️ Tentativo 4 fallito: {e}")
+
+    # Tentativo 5: Solo ID
+    try:
+        print(f"🔍 Tentativo 5 Studio('{LIGHTNING_STUDIO_ID}')")
+        return Studio(LIGHTNING_STUDIO_ID)
+    except Exception as e:
+        print(f"⚠️ Tentativo 5 fallito: {e}")
+
+    raise Exception(f"Impossibile collegare lo Studio tramite SDK. Errore finale: {str(e)}")
 
 
 @app.post("/api/v1/studio/start")
