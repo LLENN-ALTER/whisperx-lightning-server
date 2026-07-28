@@ -7,7 +7,7 @@ from typing import List, Dict, Any, Optional
 from fastapi import FastAPI, HTTPException, Header, Depends, File, UploadFile
 from pydantic import BaseModel
 
-# Import SDK ufficiale Lightning
+# Import SDK ufficiale Lightning (fallback)
 try:
     from lightning_sdk import Studio, Teamspace
 except ImportError:
@@ -31,17 +31,11 @@ LIGHTNING_STUDIO_ID = os.getenv("LIGHTNING_STUDIO_ID", "01kyf6tebbywg1d835f6ptkg
 LIGHTNING_STUDIO_NAME = os.getenv("LIGHTNING_STUDIO_NAME", "gpu-studio")
 LIGHTNING_STUDIO_URL = os.getenv("LIGHTNING_STUDIO_URL", "https://8001-01kyf6tebbywg1d835f6ptkgt5.cloudspaces.litng.ai")
 
-# Separazione netta: USER è l'utente, ORG è l'organizzazione
-USER_NAME = os.getenv("LIGHTNING_USER") or "xmauri99"
-ORG_NAME = os.getenv("LIGHTNING_TEAMSPACE") or "xmauri99-org"
+USER_NAME = os.getenv("LIGHTNING_USER", "xmauri99")
+ORG_NAME = os.getenv("LIGHTNING_TEAMSPACE", "xmauri99-org")
 
-# Impostazione ambiente SDK
 if LIGHTNING_API_KEY:
     os.environ["LIGHTNING_API_KEY"] = LIGHTNING_API_KEY
-
-os.environ["LIGHTNING_USER"] = USER_NAME
-os.environ["LIGHTNING_USERNAME"] = USER_NAME
-os.environ["LIGHTNING_USER_ORG"] = ORG_NAME
 
 
 # ==========================================
@@ -198,91 +192,70 @@ def process_subtitles(request: RebuildRequest):
 
 
 # ==========================================
-# CONTROL ENDPOINTS (via Official Lightning SDK)
+# CONTROL ENDPOINTS (API HTTP Dirette / SDK)
 # ==========================================
-def _get_lightning_studio():
-    """Tenta l'aggancio dello Studio via Teamspace/Organizzazione o istanziazione diretta."""
-    last_err = "Nessun tentativo riuscito"
+async def _control_studio_api(action: str):
+    """Esegue comandi start/stop direttamente via API REST di Lightning.ai per evitare bug dell'SDK."""
+    headers = {
+        "Authorization": f"Bearer {LIGHTNING_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    # Endpoint diretti della piattaforma Lightning per il controllo dello studio tramite ID
+    url = f"https://api.lightning.ai/v1/projects/{ORG_NAME}/studios/{LIGHTNING_STUDIO_ID}/{action}"
+    
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        res = await client.post(url, headers=headers)
+        if res.status_code in [200, 201, 202, 204]:
+            return True
+        
+        # Se fallisce con l'URL org, tenta il fallback con l'endpoint generico cloudspaces
+        url_fallback = f"https://api.lightning.ai/v1/cloudspaces/{LIGHTNING_STUDIO_ID}/{action}"
+        res_fb = await client.post(url_fallback, headers=headers)
+        if res_fb.status_code in [200, 201, 202, 204]:
+            return True
 
-    # Metodo 1: Tramite la classe Teamspace dell'SDK (Consigliato per account organizzativi)
-    if Teamspace is not None:
+    # Se le API REST falliscono, tentiamo la chiamata via SDK come ultima risorsa
+    if Studio is not None:
         try:
-            print(f"🔍 Metodo 1: Teamspace('{ORG_NAME}').get_studio('{LIGHTNING_STUDIO_NAME}')")
-            ts = Teamspace(ORG_NAME)
-            return ts.get_studio(LIGHTNING_STUDIO_NAME)
-        except Exception as err:
-            last_err = str(err)
-            print(f"⚠️ Metodo 1 fallito: {err}")
+            st = Studio(LIGHTNING_STUDIO_ID)
+            if action == "start":
+                st.start()
+            else:
+                st.stop()
+            return True
+        except Exception as sdk_err:
+            raise Exception(f"API HTTP: {res.text} | SDK Fallback: {str(sdk_err)}")
 
-        try:
-            print(f"🔍 Metodo 2: Teamspace('{ORG_NAME}').get_studio_by_id('{LIGHTNING_STUDIO_ID}')")
-            ts = Teamspace(ORG_NAME)
-            return ts.get_studio_by_id(LIGHTNING_STUDIO_ID)
-        except Exception as err:
-            last_err = str(err)
-            print(f"⚠️ Metodo 2 fallito: {err}")
-
-    # Metodo 3: Inizializzazione diretta Studio specificando sia user che teamspace/org
-    try:
-        print(f"🔍 Metodo 3: Studio(name='{LIGHTNING_STUDIO_NAME}', user='{USER_NAME}', teamspace='{ORG_NAME}')")
-        return Studio(name=LIGHTNING_STUDIO_NAME, user=USER_NAME, teamspace=ORG_NAME)
-    except Exception as err:
-        last_err = str(err)
-        print(f"⚠️ Metodo 3 fallito: {err}")
-
-    # Metodo 4: Inizializzazione diretta con ID studio e utente
-    try:
-        print(f"🔍 Metodo 4: Studio(name='{LIGHTNING_STUDIO_ID}', user='{USER_NAME}')")
-        return Studio(name=LIGHTNING_STUDIO_ID, user=USER_NAME)
-    except Exception as err:
-        last_err = str(err)
-        print(f"⚠️ Metodo 4 fallito: {err}")
-
-    # Metodo 5: Costruttore minimale
-    try:
-        print(f"🔍 Metodo 5: Studio('{LIGHTNING_STUDIO_ID}')")
-        return Studio(LIGHTNING_STUDIO_ID)
-    except Exception as err:
-        last_err = str(err)
-        print(f"⚠️ Metodo 5 fallito: {err}")
-
-    raise Exception(f"Impossibile collegare lo Studio tramite SDK. Errore finale: {last_err}")
+    raise Exception(f"Risposta server Lightning API ({res.status_code}): {res.text}")
 
 
 @app.post("/api/v1/studio/start")
 async def start_studio(authorized: None = Depends(verify_token)):
     if not LIGHTNING_API_KEY:
         raise HTTPException(status_code=500, detail="LIGHTNING_API_KEY mancante nelle Environment Variables di Render.")
-    
-    if Studio is None:
-        raise HTTPException(status_code=500, detail="lightning-sdk non installato.")
 
     try:
-        print("🚀 Avvio Studio tramite SDK...")
-        s = _get_lightning_studio()
-        s.start()
+        print("🚀 Avvio Studio in corso...")
+        await _control_studio_api("start")
         return {"status": "success", "message": "Studio avviato con successo!"}
     except Exception as e:
-        print(f"❌ Errore SDK START: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Errore SDK Lightning: {str(e)}")
+        print(f"❌ Errore START Studio: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Errore durante l'avvio dello Studio: {str(e)}")
 
 
 @app.post("/api/v1/studio/stop")
 async def stop_studio(authorized: None = Depends(verify_token)):
     if not LIGHTNING_API_KEY:
         raise HTTPException(status_code=500, detail="LIGHTNING_API_KEY mancante nelle Environment Variables di Render.")
-    
-    if Studio is None:
-        raise HTTPException(status_code=500, detail="lightning-sdk non installato.")
 
     try:
-        print("🛑 Arresto Studio tramite SDK...")
-        s = _get_lightning_studio()
-        s.stop()
+        print("🛑 Arresto Studio in corso...")
+        await _control_studio_api("stop")
         return {"status": "success", "message": "Studio arrestato con successo!"}
     except Exception as e:
-        print(f"❌ Errore SDK STOP: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Errore SDK Lightning: {str(e)}")
+        print(f"❌ Errore STOP Studio: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Errore durante l'arresto dello Studio: {str(e)}")
 
 
 @app.get("/api/v1/studio/status")
@@ -290,7 +263,7 @@ async def get_status(authorized: None = Depends(verify_token)):
     if not LIGHTNING_STUDIO_URL:
         return {"status": "stopped", "stage": "Not Configured"}
     
-    # Controlla se lo Studio su Lightning è raggiungibile (porta 8001)
+    # Controlla se lo Studio su Lightning è raggiungibile
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
             res = await client.get(f"{LIGHTNING_STUDIO_URL.rstrip('/')}/health")
