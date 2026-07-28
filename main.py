@@ -7,12 +7,11 @@ from typing import List, Dict, Any, Optional
 from fastapi import FastAPI, HTTPException, Header, Depends, File, UploadFile
 from pydantic import BaseModel
 
-# Import SDK ufficiale Lightning (fallback)
+# Import SDK ufficiale Lightning
 try:
-    from lightning_sdk import Studio, Teamspace
+    from lightning_sdk import Studio
 except ImportError:
     Studio = None
-    Teamspace = None
 
 # ==========================================
 # INIZIALIZZAZIONE FASTAPI
@@ -34,8 +33,12 @@ LIGHTNING_STUDIO_URL = os.getenv("LIGHTNING_STUDIO_URL", "https://8001-01kyf6teb
 USER_NAME = os.getenv("LIGHTNING_USER", "xmauri99")
 ORG_NAME = os.getenv("LIGHTNING_TEAMSPACE", "xmauri99-org")
 
+# Variabili d'ambiente per l'SDK
 if LIGHTNING_API_KEY:
     os.environ["LIGHTNING_API_KEY"] = LIGHTNING_API_KEY
+
+os.environ["LIGHTNING_USER"] = USER_NAME
+os.environ["LIGHTNING_USERNAME"] = USER_NAME
 
 
 # ==========================================
@@ -192,42 +195,52 @@ def process_subtitles(request: RebuildRequest):
 
 
 # ==========================================
-# CONTROL ENDPOINTS (API HTTP Dirette / SDK)
+# CONTROL ENDPOINTS (via Official Lightning SDK)
 # ==========================================
-async def _control_studio_api(action: str):
-    """Esegue comandi start/stop direttamente via API REST di Lightning.ai per evitare bug dell'SDK."""
-    headers = {
-        "Authorization": f"Bearer {LIGHTNING_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    
-    # Endpoint diretti della piattaforma Lightning per il controllo dello studio tramite ID
-    url = f"https://api.lightning.ai/v1/projects/{ORG_NAME}/studios/{LIGHTNING_STUDIO_ID}/{action}"
-    
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        res = await client.post(url, headers=headers)
-        if res.status_code in [200, 201, 202, 204]:
-            return True
-        
-        # Se fallisce con l'URL org, tenta il fallback con l'endpoint generico cloudspaces
-        url_fallback = f"https://api.lightning.ai/v1/cloudspaces/{LIGHTNING_STUDIO_ID}/{action}"
-        res_fb = await client.post(url_fallback, headers=headers)
-        if res_fb.status_code in [200, 201, 202, 204]:
-            return True
+def _get_lightning_studio():
+    """Inizializzazione diretta dello Studio passando user o org esplicitamente."""
+    if Studio is None:
+        raise Exception("lightning-sdk non installato.")
 
-    # Se le API REST falliscono, tentiamo la chiamata via SDK come ultima risorsa
-    if Studio is not None:
-        try:
-            st = Studio(LIGHTNING_STUDIO_ID)
-            if action == "start":
-                st.start()
-            else:
-                st.stop()
-            return True
-        except Exception as sdk_err:
-            raise Exception(f"API HTTP: {res.text} | SDK Fallback: {str(sdk_err)}")
+    last_errors = []
 
-    raise Exception(f"Risposta server Lightning API ({res.status_code}): {res.text}")
+    # Strategy 1: Utilizza la combinazione org + name
+    try:
+        print(f"🔍 Strategia 1: Studio('{LIGHTNING_STUDIO_NAME}', org='{ORG_NAME}')")
+        return Studio(name=LIGHTNING_STUDIO_NAME, org=ORG_NAME)
+    except Exception as err:
+        last_errors.append(f"Strat 1: {err}")
+
+    # Strategy 2: Utilizza il path 'org/studio_name'
+    try:
+        path = f"{ORG_NAME}/{LIGHTNING_STUDIO_NAME}"
+        print(f"🔍 Strategia 2: Studio('{path}')")
+        return Studio(name=path)
+    except Exception as err:
+        last_errors.append(f"Strat 2: {err}")
+
+    # Strategy 3: Utilizza user + teamspace
+    try:
+        print(f"🔍 Strategia 3: Studio('{LIGHTNING_STUDIO_NAME}', user='{USER_NAME}', teamspace='{ORG_NAME}')")
+        return Studio(name=LIGHTNING_STUDIO_NAME, user=USER_NAME, teamspace=ORG_NAME)
+    except Exception as err:
+        last_errors.append(f"Strat 3: {err}")
+
+    # Strategy 4: Utilizza l'ID Studio + org
+    try:
+        print(f"🔍 Strategia 4: Studio('{LIGHTNING_STUDIO_ID}', org='{ORG_NAME}')")
+        return Studio(name=LIGHTNING_STUDIO_ID, org=ORG_NAME)
+    except Exception as err:
+        last_errors.append(f"Strat 4: {err}")
+
+    # Strategy 5: Utilizza l'ID Studio + user
+    try:
+        print(f"🔍 Strategia 5: Studio('{LIGHTNING_STUDIO_ID}', user='{USER_NAME}')")
+        return Studio(name=LIGHTNING_STUDIO_ID, user=USER_NAME)
+    except Exception as err:
+        last_errors.append(f"Strat 5: {err}")
+
+    raise Exception(" | ".join(last_errors))
 
 
 @app.post("/api/v1/studio/start")
@@ -236,11 +249,12 @@ async def start_studio(authorized: None = Depends(verify_token)):
         raise HTTPException(status_code=500, detail="LIGHTNING_API_KEY mancante nelle Environment Variables di Render.")
 
     try:
-        print("🚀 Avvio Studio in corso...")
-        await _control_studio_api("start")
+        print("🚀 Avvio Studio tramite SDK...")
+        s = _get_lightning_studio()
+        s.start()
         return {"status": "success", "message": "Studio avviato con successo!"}
     except Exception as e:
-        print(f"❌ Errore START Studio: {str(e)}")
+        print(f"❌ Errore SDK START: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Errore durante l'avvio dello Studio: {str(e)}")
 
 
@@ -250,11 +264,12 @@ async def stop_studio(authorized: None = Depends(verify_token)):
         raise HTTPException(status_code=500, detail="LIGHTNING_API_KEY mancante nelle Environment Variables di Render.")
 
     try:
-        print("🛑 Arresto Studio in corso...")
-        await _control_studio_api("stop")
+        print("🛑 Arresto Studio tramite SDK...")
+        s = _get_lightning_studio()
+        s.stop()
         return {"status": "success", "message": "Studio arrestato con successo!"}
     except Exception as e:
-        print(f"❌ Errore STOP Studio: {str(e)}")
+        print(f"❌ Errore SDK STOP: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Errore durante l'arresto dello Studio: {str(e)}")
 
 
@@ -263,7 +278,7 @@ async def get_status(authorized: None = Depends(verify_token)):
     if not LIGHTNING_STUDIO_URL:
         return {"status": "stopped", "stage": "Not Configured"}
     
-    # Controlla se lo Studio su Lightning è raggiungibile
+    # Controlla se lo Studio su Lightning è raggiungibile (porta 8001)
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
             res = await client.get(f"{LIGHTNING_STUDIO_URL.rstrip('/')}/health")
