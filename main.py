@@ -32,10 +32,11 @@ LIGHTNING_STUDIO_URL = os.getenv("LIGHTNING_STUDIO_URL", "https://8001-01kyf6teb
 TEAMSPACE = os.getenv("LIGHTNING_TEAMSPACE", "get-gpu-project")
 USER_ORG = os.getenv("LIGHTNING_USER_ORG", "xmauri99-org")
 
-# Imposta le variabili d'ambiente usate nativamente dall'SDK Lightning
+# Configurazione variabili d'ambiente per Lightning SDK
 if LIGHTNING_API_KEY:
     os.environ["LIGHTNING_API_KEY"] = LIGHTNING_API_KEY
     os.environ["LIGHTNING_USER"] = USER_ORG
+    os.environ["LIGHTNING_USERNAME"] = USER_ORG
     os.environ["LIGHTNING_ORG"] = USER_ORG
     os.environ["LIGHTNING_TEAMSPACE"] = TEAMSPACE
 
@@ -199,26 +200,18 @@ def process_subtitles(request: RebuildRequest):
 # CONTROL ENDPOINTS (via Official Lightning SDK)
 # ==========================================
 def _get_lightning_studio():
-    """Tenta l'istanziazione dello Studio provando le combinazioni possibili di percorso."""
-    candidates = [
-        f"{TEAMSPACE}/{LIGHTNING_STUDIO_NAME}",
-        f"{USER_ORG}/{LIGHTNING_STUDIO_NAME}",
-        f"{USER_ORG}/{TEAMSPACE}/{LIGHTNING_STUDIO_NAME}",
-        LIGHTNING_STUDIO_NAME,
-        LIGHTNING_STUDIO_ID
-    ]
-    
-    last_err = None
-    for target in candidates:
+    """Inizializza lo studio passando esplicitamente i dettagli di nome, teamspace e utente."""
+    try:
+        # Tenta con nome studio + teamspace
+        print(f"🔍 Connessione Studio: {LIGHTNING_STUDIO_NAME} (Teamspace: {TEAMSPACE}, Org: {USER_ORG})")
+        return Studio(name=LIGHTNING_STUDIO_NAME, teamspace=TEAMSPACE, user=USER_ORG)
+    except Exception as e1:
         try:
-            print(f"🔍 Tentativo SDK Studio target: '{target}'")
-            s = Studio(name=target)
-            return s
-        except Exception as e:
-            print(f"⚠️ Fallito '{target}': {str(e)}")
-            last_err = e
-            
-    raise Exception(f"Impossibile collegare lo Studio tramite SDK. Ultimo errore: {str(last_err)}")
+            # Fallback 1: usa l'ID unico
+            return Studio(name=LIGHTNING_STUDIO_ID)
+        except Exception as e2:
+            # Fallback 2: passa solo il nome con teamspace
+            return Studio(name=f"{TEAMSPACE}/{LIGHTNING_STUDIO_NAME}")
 
 
 @app.post("/api/v1/studio/start")
