@@ -29,8 +29,10 @@ LIGHTNING_API_KEY = os.getenv("LIGHTNING_API_KEY", "")
 LIGHTNING_STUDIO_ID = os.getenv("LIGHTNING_STUDIO_ID", "01kyf6tebbywg1d835f6ptkgt5")
 LIGHTNING_STUDIO_NAME = os.getenv("LIGHTNING_STUDIO_NAME", "gpu-studio")
 LIGHTNING_STUDIO_URL = os.getenv("LIGHTNING_STUDIO_URL", "https://8001-01kyf6tebbywg1d835f6ptkgt5.cloudspaces.litng.ai")
-TEAMSPACE = os.getenv("LIGHTNING_TEAMSPACE", "get-gpu-project")
-USER_ORG = os.getenv("LIGHTNING_USER_ORG", "xmauri99")
+
+# Mappatura esatta sulle tue variabili reali di Render
+USER_NAME = os.getenv("LIGHTNING_USER", "xmauri99")
+TEAMSPACE = os.getenv("LIGHTNING_TEAMSPACE", "xmauri99-org")
 
 # Configurazione variabili d'ambiente ufficiali per Lightning SDK
 if LIGHTNING_API_KEY:
@@ -157,9 +159,7 @@ def read_root():
 @app.post("/transcribe")
 @app.post("/api/v1/transcribe")
 async def transcribe_audio(file: UploadFile = File(...)):
-    """
-    Inoltra il file audio allo Studio Lightning AI per la trascrizione reale.
-    """
+    """Inoltra il file audio allo Studio Lightning AI per la trascrizione reale."""
     if not LIGHTNING_STUDIO_URL:
         raise HTTPException(status_code=500, detail="LIGHTNING_STUDIO_URL non configurato su Render.")
         
@@ -196,12 +196,12 @@ def process_subtitles(request: RebuildRequest):
 # CONTROL ENDPOINTS (via Official Lightning SDK)
 # ==========================================
 def _get_lightning_studio():
-    """Connette lo Studio provando le combinazioni valide con l'utente xmauri99."""
+    """Connette lo Studio provando le combinazioni valide con l'utente e teamspace di Render."""
     candidates = [
-        {"name": LIGHTNING_STUDIO_NAME, "teamspace": TEAMSPACE, "user": USER_ORG},
-        {"name": LIGHTNING_STUDIO_NAME, "user": USER_ORG},
-        {"name": LIGHTNING_STUDIO_NAME, "teamspace": TEAMSPACE},
-        {"name": LIGHTNING_STUDIO_ID, "user": USER_ORG},
+        {"name": LIGHTNING_STUDIO_NAME, "teamspace": TEAMSPACE, "user": USER_NAME},
+        {"name": LIGHTNING_STUDIO_NAME, "user": USER_NAME},
+        {"name": LIGHTNING_STUDIO_ID, "user": USER_NAME},
+        {"name": LIGHTNING_STUDIO_ID, "teamspace": TEAMSPACE},
         {"name": LIGHTNING_STUDIO_ID}
     ]
     
