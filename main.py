@@ -154,8 +154,8 @@ def process_subtitles(request: RebuildRequest):
     try:
         updated_segments = rebuild_segments_smart(
             result=request.result,
-            max_chars_per_line=request.max_chars_per_line,
-            max_gap_seconds=request.max_gap_seconds
+            max_chars_per_line=request.max_chars_per_line or 38,
+            max_gap_seconds=request.max_gap_seconds or 0.6
         )
         return {"status": "success", "segments": updated_segments}
     except Exception as e:
@@ -212,7 +212,8 @@ def get_credits(authorized: None = Depends(verify_token)):
         
         # Recupera le informazioni utente tramite il client interno dello Studio
         if hasattr(s, "_client"):
-            user_info = s._client.user_service_get_user()
+            client = s._client  # type: ignore
+            user_info = client.user_service_get_user()
             credits_val = getattr(user_info, "credits", None) or getattr(user_info, "balance", None)
 
         return {
