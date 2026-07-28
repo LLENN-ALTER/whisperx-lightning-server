@@ -22,7 +22,7 @@ APP_SECRET_KEY = os.getenv("APP_SECRET_KEY", "SRT_SUITE_SECRET_TOKEN_2026")
 LIGHTNING_API_KEY = os.getenv("LIGHTNING_API_KEY", "")
 LIGHTNING_STUDIO_ID = os.getenv("LIGHTNING_STUDIO_ID", "01kyf6tebbywg1d835f6ptkgt5")
 LIGHTNING_STUDIO_URL = os.getenv("LIGHTNING_STUDIO_URL", "https://8001-01kyf6tebbywg1d835f6ptkgt5.cloudspaces.litng.ai")
-TEAMSPACE = os.getenv("LIGHTNING_TEAMSPACE", "get-gpu-project")
+TEAMSPACE = os.getenv("LIGHTNING_TEAMSPACE", "xmauri99-org")
 
 
 def verify_token(authorization: str = Header(None)):
@@ -181,7 +181,7 @@ def process_subtitles(request: RebuildRequest):
 
 
 # ==========================================
-# CONTROL ENDPOINTS (REST API Lightning v1 con Project Scope)
+# CONTROL ENDPOINTS (REST API Lightning v1)
 # ==========================================
 @app.post("/api/v1/studio/start")
 async def start_studio(authorized: None = Depends(verify_token)):
@@ -193,13 +193,23 @@ async def start_studio(authorized: None = Depends(verify_token)):
         "Authorization": f"Bearer {LIGHTNING_API_KEY}",
         "Content-Type": "application/json"
     }
-    url = f"https://lightning.ai/v1/projects/{TEAMSPACE}/studios/{LIGHTNING_STUDIO_ID}/start"
     
+    # Tentativo 1: Endpoint diretto standard
+    url = f"https://lightning.ai/v1/studios/{LIGHTNING_STUDIO_ID}/start"
     print(f"🚀 Invio richiesta START a Lightning AI: {url}")
+    
     async with httpx.AsyncClient() as client:
         try:
-            res = await client.post(url, headers=headers)
+            res = await client.post(url, headers=headers, json={})
             print(f"📥 Risposta Lightning ({res.status_code}): {res.text}")
+            
+            # Tentativo 2: Se risponde 404, proseguiamo col percorso cloudspaces
+            if res.status_code == 404:
+                alt_url = f"https://lightning.ai/v1/cloudspaces/{LIGHTNING_STUDIO_ID}/start"
+                print(f"🔄 Tentativo alternativo (Cloudspaces): {alt_url}")
+                res = await client.post(alt_url, headers=headers, json={})
+                print(f"📥 Risposta Cloudspaces ({res.status_code}): {res.text}")
+
             if res.status_code in [200, 201, 204]:
                 return {"status": "success", "message": f"Studio '{LIGHTNING_STUDIO_ID}' avviato con successo!"}
             raise HTTPException(status_code=res.status_code, detail=f"Lightning Error: {res.text}")
@@ -217,12 +227,18 @@ async def stop_studio(authorized: None = Depends(verify_token)):
         "Authorization": f"Bearer {LIGHTNING_API_KEY}",
         "Content-Type": "application/json"
     }
-    url = f"https://lightning.ai/v1/projects/{TEAMSPACE}/studios/{LIGHTNING_STUDIO_ID}/stop"
+    url = f"https://lightning.ai/v1/studios/{LIGHTNING_STUDIO_ID}/stop"
     
     print(f"🛑 Invio richiesta STOP a Lightning AI: {url}")
     async with httpx.AsyncClient() as client:
         try:
-            res = await client.post(url, headers=headers)
+            res = await client.post(url, headers=headers, json={})
+            
+            if res.status_code == 404:
+                alt_url = f"https://lightning.ai/v1/cloudspaces/{LIGHTNING_STUDIO_ID}/stop"
+                print(f"🔄 Tentativo alternativo (Cloudspaces): {alt_url}")
+                res = await client.post(alt_url, headers=headers, json={})
+
             print(f"📥 Risposta Lightning ({res.status_code}): {res.text}")
             if res.status_code in [200, 201, 204]:
                 return {"status": "success", "message": f"Studio '{LIGHTNING_STUDIO_ID}' arrestato con successo!"}
@@ -251,3 +267,4 @@ async def get_status(authorized: None = Depends(verify_token)):
 @app.get("/api/v1/credits")
 def get_credits(authorized: None = Depends(verify_token)):
     return {"status": "success", "credits": 14.21}
+    
