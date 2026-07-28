@@ -7,10 +7,9 @@ from pydantic import BaseModel
 
 # Import SDK ufficiale Lightning
 try:
-    from lightning_sdk import Studio, Teamspace
+    from lightning_sdk import Studio
 except ImportError:
     Studio = None
-    Teamspace = None
 
 # ==========================================
 # INIZIALIZZAZIONE FASTAPI
@@ -29,8 +28,9 @@ LIGHTNING_STUDIO_ID = os.getenv("LIGHTNING_STUDIO_ID", "01kyf6tebbywg1d835f6ptkg
 LIGHTNING_STUDIO_NAME = os.getenv("LIGHTNING_STUDIO_NAME", "gpu-studio")
 LIGHTNING_STUDIO_URL = os.getenv("LIGHTNING_STUDIO_URL", "https://8001-01kyf6tebbywg1d835f6ptkgt5.cloudspaces.litng.ai")
 
-USER_NAME = os.getenv("LIGHTNING_USER", "xmauri99")
-ORG_NAME = os.getenv("LIGHTNING_TEAMSPACE", "xmauri99-org")
+USER_NAME = "xmauri99"
+ORG_NAME = "xmauri99-org"
+TEAMSPACE_NAME = "get-gpu-project"
 
 if LIGHTNING_API_KEY:
     os.environ["LIGHTNING_API_KEY"] = LIGHTNING_API_KEY
@@ -190,44 +190,36 @@ def process_subtitles(request: RebuildRequest):
 
 
 # ==========================================
-# CONTROL ENDPOINTS (Teamspace & Studio Connect)
+# CONTROL ENDPOINTS (Exact Path Match)
 # ==========================================
 def _get_studio_instance():
-    """Connette allo Studio inizializzando prima la classe Teamspace dell'organizzazione."""
+    """Istanzia lo Studio usando la struttura esatta get-gpu-project."""
     if Studio is None:
         raise Exception("lightning-sdk non installato.")
 
     errors = []
 
-    # Opzione 1: Uso della classe Teamspace per organizzazioni
-    if Teamspace is not None:
-        try:
-            print(f"🔍 Opzione 1: Teamspace(org='{ORG_NAME}').get_studio('{LIGHTNING_STUDIO_NAME}')")
-            ts = Teamspace(org=ORG_NAME)
-            return ts.get_studio(LIGHTNING_STUDIO_NAME)
-        except Exception as e:
-            errors.append(f"Opzione 1: {e}")
-
-        try:
-            print(f"🔍 Opzione 2: Teamspace(name='{ORG_NAME}').get_studio('{LIGHTNING_STUDIO_NAME}')")
-            ts = Teamspace(name=ORG_NAME)
-            return ts.get_studio(LIGHTNING_STUDIO_NAME)
-        except Exception as e:
-            errors.append(f"Opzione 2: {e}")
-
-    # Opzione 3: Inizializzazione diretta Studio specificando nome e org
+    # Tentativo 1: Percorso completo xmauri99-org/get-gpu-project/gpu-studio
     try:
-        print(f"🔍 Opzione 3: Studio(name='{LIGHTNING_STUDIO_NAME}', org='{ORG_NAME}')")
-        return Studio(name=LIGHTNING_STUDIO_NAME, org=ORG_NAME)
+        full_path = f"{ORG_NAME}/{TEAMSPACE_NAME}/{LIGHTNING_STUDIO_NAME}"
+        print(f"🔍 Tentativo 1: Studio('{full_path}')")
+        return Studio(name=full_path)
     except Exception as e:
-        errors.append(f"Opzione 3: {e}")
+        errors.append(f"T1: {e}")
 
-    # Opzione 4: Inizializzazione diretta Studio con user e org
+    # Tentativo 2: Nome + teamspace esplicito + org
     try:
-        print(f"🔍 Opzione 4: Studio(name='{LIGHTNING_STUDIO_NAME}', user='{USER_NAME}', org='{ORG_NAME}')")
-        return Studio(name=LIGHTNING_STUDIO_NAME, user=USER_NAME, org=ORG_NAME)
+        print(f"🔍 Tentativo 2: Studio('{LIGHTNING_STUDIO_NAME}', teamspace='{TEAMSPACE_NAME}', org='{ORG_NAME}')")
+        return Studio(name=LIGHTNING_STUDIO_NAME, teamspace=TEAMSPACE_NAME, org=ORG_NAME)
     except Exception as e:
-        errors.append(f"Opzione 4: {e}")
+        errors.append(f"T2: {e}")
+
+    # Tentativo 3: Nome + teamspace esplicito senza org
+    try:
+        print(f"🔍 Tentativo 3: Studio('{LIGHTNING_STUDIO_NAME}', teamspace='{TEAMSPACE_NAME}')")
+        return Studio(name=LIGHTNING_STUDIO_NAME, teamspace=TEAMSPACE_NAME)
+    except Exception as e:
+        errors.append(f"T3: {e}")
 
     raise Exception(" | ".join(errors))
 
