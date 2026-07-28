@@ -30,15 +30,10 @@ LIGHTNING_STUDIO_ID = os.getenv("LIGHTNING_STUDIO_ID", "01kyf6tebbywg1d835f6ptkg
 LIGHTNING_STUDIO_NAME = os.getenv("LIGHTNING_STUDIO_NAME", "gpu-studio")
 LIGHTNING_STUDIO_URL = os.getenv("LIGHTNING_STUDIO_URL", "https://8001-01kyf6tebbywg1d835f6ptkgt5.cloudspaces.litng.ai")
 TEAMSPACE = os.getenv("LIGHTNING_TEAMSPACE", "get-gpu-project")
-USER_ORG = os.getenv("LIGHTNING_USER_ORG", "xmauri99-org")
 
-# Configurazione variabili d'ambiente per Lightning SDK
+# Configurazione variabili d'ambiente ufficiali per Lightning SDK
 if LIGHTNING_API_KEY:
     os.environ["LIGHTNING_API_KEY"] = LIGHTNING_API_KEY
-    os.environ["LIGHTNING_USER"] = USER_ORG
-    os.environ["LIGHTNING_USERNAME"] = USER_ORG
-    os.environ["LIGHTNING_ORG"] = USER_ORG
-    os.environ["LIGHTNING_TEAMSPACE"] = TEAMSPACE
 
 
 # ==========================================
@@ -200,18 +195,25 @@ def process_subtitles(request: RebuildRequest):
 # CONTROL ENDPOINTS (via Official Lightning SDK)
 # ==========================================
 def _get_lightning_studio():
-    """Inizializza lo studio passando esplicitamente i dettagli di nome, teamspace e utente."""
-    try:
-        # Tenta con nome studio + teamspace
-        print(f"🔍 Connessione Studio: {LIGHTNING_STUDIO_NAME} (Teamspace: {TEAMSPACE}, Org: {USER_ORG})")
-        return Studio(name=LIGHTNING_STUDIO_NAME, teamspace=TEAMSPACE, user=USER_ORG)
-    except Exception as e1:
+    """Tenta la connessione allo Studio usando il teamspace e il nome dello studio."""
+    candidates = [
+        {"name": LIGHTNING_STUDIO_NAME, "teamspace": TEAMSPACE},
+        {"name": f"{TEAMSPACE}/{LIGHTNING_STUDIO_NAME}"},
+        {"name": LIGHTNING_STUDIO_NAME},
+        {"name": LIGHTNING_STUDIO_ID}
+    ]
+    
+    last_err = None
+    for kw in candidates:
         try:
-            # Fallback 1: usa l'ID unico
-            return Studio(name=LIGHTNING_STUDIO_ID)
-        except Exception as e2:
-            # Fallback 2: passa solo il nome con teamspace
-            return Studio(name=f"{TEAMSPACE}/{LIGHTNING_STUDIO_NAME}")
+            print(f"🔍 Connessione Studio con parametri: {kw}")
+            s = Studio(**kw)
+            return s
+        except Exception as e:
+            print(f"⚠️ Fallito {kw}: {str(e)}")
+            last_err = e
+
+    raise Exception(f"Impossibile collegare lo Studio tramite SDK. Ultimo errore: {str(last_err)}")
 
 
 @app.post("/api/v1/studio/start")
