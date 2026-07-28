@@ -40,7 +40,7 @@ def verify_token(authorization: str = Header(None)):
         )
 
 
-# Imposta la chiave API per la libreria Lightning se presente
+# Imposta la chiave API per la libreria Lightning
 if LIGHTNING_API_KEY:
     os.environ["LIGHTNING_API_KEY"] = LIGHTNING_API_KEY
 
@@ -200,25 +200,26 @@ async def start_studio(authorized: None = Depends(verify_token)):
         raise HTTPException(status_code=500, detail="LIGHTNING_API_KEY mancante nelle Environment Variables di Render.")
     
     if Studio is None:
-        raise HTTPException(status_code=500, detail="lightning-sdk non installato. Aggiungilo a requirements.txt.")
+        raise HTTPException(status_code=500, detail="lightning-sdk non installato.")
 
     try:
-        print(f"🚀 Avvio Studio tramite SDK... (ID: {LIGHTNING_STUDIO_ID}, Teamspace: {TEAMSPACE})")
+        print(f"🚀 Avvio Studio tramite SDK (User/Org: {TEAMSPACE}, Studio ID: {LIGHTNING_STUDIO_ID})...")
         
-        # Inizializziamo lo Studio tramite SDK
-        s = Studio(name=LIGHTNING_STUDIO_ID, teamspace=TEAMSPACE)
+        # Tentativo 1: Con parametro 'user' / 'teamspace'
+        try:
+            s = Studio(name=LIGHTNING_STUDIO_ID, user=TEAMSPACE, teamspace="get-gpu-project")
+        except Exception:
+            try:
+                s = Studio(name=LIGHTNING_STUDIO_ID, organization=TEAMSPACE)
+            except Exception:
+                s = Studio(name=LIGHTNING_STUDIO_ID, teamspace=TEAMSPACE)
+        
         s.start()
-        
         return {"status": "success", "message": f"Studio '{LIGHTNING_STUDIO_ID}' avviato con successo!"}
+        
     except Exception as e:
         print(f"❌ Errore SDK START: {str(e)}")
-        # Tentativo fallback usando solo il nome/ID se il teamspace causa problemi
-        try:
-            s = Studio(name=LIGHTNING_STUDIO_ID)
-            s.start()
-            return {"status": "success", "message": f"Studio '{LIGHTNING_STUDIO_ID}' avviato con successo!"}
-        except Exception as err:
-            raise HTTPException(status_code=500, detail=f"Errore SDK Lightning: {str(err)}")
+        raise HTTPException(status_code=500, detail=f"Errore SDK Lightning: {str(e)}")
 
 
 @app.post("/api/v1/studio/stop")
@@ -227,23 +228,25 @@ async def stop_studio(authorized: None = Depends(verify_token)):
         raise HTTPException(status_code=500, detail="LIGHTNING_API_KEY mancante nelle Environment Variables di Render.")
     
     if Studio is None:
-        raise HTTPException(status_code=500, detail="lightning-sdk non installato. Aggiungilo a requirements.txt.")
+        raise HTTPException(status_code=500, detail="lightning-sdk non installato.")
 
     try:
-        print(f"🛑 Arresto Studio tramite SDK... (ID: {LIGHTNING_STUDIO_ID}, Teamspace: {TEAMSPACE})")
+        print(f"🛑 Arresto Studio tramite SDK (User/Org: {TEAMSPACE}, Studio ID: {LIGHTNING_STUDIO_ID})...")
         
-        s = Studio(name=LIGHTNING_STUDIO_ID, teamspace=TEAMSPACE)
+        try:
+            s = Studio(name=LIGHTNING_STUDIO_ID, user=TEAMSPACE, teamspace="get-gpu-project")
+        except Exception:
+            try:
+                s = Studio(name=LIGHTNING_STUDIO_ID, organization=TEAMSPACE)
+            except Exception:
+                s = Studio(name=LIGHTNING_STUDIO_ID, teamspace=TEAMSPACE)
+                
         s.stop()
-        
         return {"status": "success", "message": f"Studio '{LIGHTNING_STUDIO_ID}' arrestato con successo!"}
+        
     except Exception as e:
         print(f"❌ Errore SDK STOP: {str(e)}")
-        try:
-            s = Studio(name=LIGHTNING_STUDIO_ID)
-            s.stop()
-            return {"status": "success", "message": f"Studio '{LIGHTNING_STUDIO_ID}' arrestato con successo!"}
-        except Exception as err:
-            raise HTTPException(status_code=500, detail=f"Errore SDK Lightning: {str(err)}")
+        raise HTTPException(status_code=500, detail=f"Errore SDK Lightning: {str(e)}")
 
 
 @app.get("/api/v1/studio/status")
