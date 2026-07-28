@@ -23,11 +23,8 @@ STUDIO_NAME = os.getenv("LIGHTNING_STUDIO_NAME", "gpu-studio")
 TEAMSPACE = os.getenv("LIGHTNING_TEAMSPACE", "get-gpu-project")
 USER_NAME = os.getenv("LIGHTNING_USER", "xmauri99")
 
-# URL e Chiavi Lightning (Impostato su porta 8001)
-LIGHTNING_STUDIO_URL = os.getenv(
-    "LIGHTNING_STUDIO_URL", 
-    "https://8001-01kyf6tebbywg1d835f6ptkgt5.cloudspaces.litng.ai"
-)
+# URL e Chiavi Lightning (Forzato hardcoded per evitare problemi di Env Var)
+LIGHTNING_STUDIO_URL = "https://8001-01kyf6tebbywg1d835f6ptkgt5.cloudspaces.litng.ai"
 LIGHTNING_API_KEY = os.getenv("LIGHTNING_API_KEY", "")
 
 
