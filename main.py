@@ -27,8 +27,10 @@ app = FastAPI(
 APP_SECRET_KEY = os.getenv("APP_SECRET_KEY", "SRT_SUITE_SECRET_TOKEN_2026")
 LIGHTNING_API_KEY = os.getenv("LIGHTNING_API_KEY", "")
 LIGHTNING_STUDIO_ID = os.getenv("LIGHTNING_STUDIO_ID", "01kyf6tebbywg1d835f6ptkgt5")
+LIGHTNING_STUDIO_NAME = os.getenv("LIGHTNING_STUDIO_NAME", "gpu-studio")
 LIGHTNING_STUDIO_URL = os.getenv("LIGHTNING_STUDIO_URL", "https://8001-01kyf6tebbywg1d835f6ptkgt5.cloudspaces.litng.ai")
-TEAMSPACE = os.getenv("LIGHTNING_TEAMSPACE", "xmauri99-org")
+TEAMSPACE = os.getenv("LIGHTNING_TEAMSPACE", "get-gpu-project")
+USER_ORG = os.getenv("LIGHTNING_USER_ORG", "xmauri99-org")
 
 
 def verify_token(authorization: str = Header(None)):
@@ -40,9 +42,12 @@ def verify_token(authorization: str = Header(None)):
         )
 
 
-# Imposta la chiave API per la libreria Lightning
+# Imposta le variabili per il comportamento predefinito dell'SDK Lightning
 if LIGHTNING_API_KEY:
     os.environ["LIGHTNING_API_KEY"] = LIGHTNING_API_KEY
+    os.environ["LIGHTNING_USER"] = USER_ORG
+    os.environ["LIGHTNING_ORG"] = USER_ORG
+    os.environ["LIGHTNING_TEAMSPACE"] = TEAMSPACE
 
 
 # ==========================================
@@ -194,6 +199,27 @@ def process_subtitles(request: RebuildRequest):
 # ==========================================
 # CONTROL ENDPOINTS (via Official Lightning SDK)
 # ==========================================
+def _get_lightning_studio():
+    """Tenta l'istanziazione dello Studio provando le combinazioni possibili di identificatori."""
+    candidates = [
+        f"{TEAMSPACE}/{LIGHTNING_STUDIO_NAME}",
+        f"{USER_ORG}/{TEAMSPACE}/{LIGHTNING_STUDIO_NAME}",
+        LIGHTNING_STUDIO_NAME,
+        LIGHTNING_STUDIO_ID
+    ]
+    
+    last_err = None
+    for target in candidates:
+        try:
+            print(f"🔍 Tentativo connessione SDK Studio con target: '{target}'")
+            s = Studio(name=target)
+            return s
+        except Exception as e:
+            last_err = e
+            
+    raise Exception(f"Impossibile collegare lo Studio tramite SDK. Ultimo errore: {str(last_err)}")
+
+
 @app.post("/api/v1/studio/start")
 async def start_studio(authorized: None = Depends(verify_token)):
     if not LIGHTNING_API_KEY:
@@ -203,20 +229,10 @@ async def start_studio(authorized: None = Depends(verify_token)):
         raise HTTPException(status_code=500, detail="lightning-sdk non installato.")
 
     try:
-        print(f"🚀 Avvio Studio tramite SDK (User/Org: {TEAMSPACE}, Studio ID: {LIGHTNING_STUDIO_ID})...")
-        
-        # Tentativo 1: Con parametro 'user' / 'teamspace'
-        try:
-            s = Studio(name=LIGHTNING_STUDIO_ID, user=TEAMSPACE, teamspace="get-gpu-project")
-        except Exception:
-            try:
-                s = Studio(name=LIGHTNING_STUDIO_ID, organization=TEAMSPACE)
-            except Exception:
-                s = Studio(name=LIGHTNING_STUDIO_ID, teamspace=TEAMSPACE)
-        
+        print(f"🚀 Avvio Studio tramite SDK...")
+        s = _get_lightning_studio()
         s.start()
-        return {"status": "success", "message": f"Studio '{LIGHTNING_STUDIO_ID}' avviato con successo!"}
-        
+        return {"status": "success", "message": f"Studio avviato con successo!"}
     except Exception as e:
         print(f"❌ Errore SDK START: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Errore SDK Lightning: {str(e)}")
@@ -231,19 +247,10 @@ async def stop_studio(authorized: None = Depends(verify_token)):
         raise HTTPException(status_code=500, detail="lightning-sdk non installato.")
 
     try:
-        print(f"🛑 Arresto Studio tramite SDK (User/Org: {TEAMSPACE}, Studio ID: {LIGHTNING_STUDIO_ID})...")
-        
-        try:
-            s = Studio(name=LIGHTNING_STUDIO_ID, user=TEAMSPACE, teamspace="get-gpu-project")
-        except Exception:
-            try:
-                s = Studio(name=LIGHTNING_STUDIO_ID, organization=TEAMSPACE)
-            except Exception:
-                s = Studio(name=LIGHTNING_STUDIO_ID, teamspace=TEAMSPACE)
-                
+        print(f"🛑 Arresto Studio tramite SDK...")
+        s = _get_lightning_studio()
         s.stop()
-        return {"status": "success", "message": f"Studio '{LIGHTNING_STUDIO_ID}' arrestato con successo!"}
-        
+        return {"status": "success", "message": f"Studio arrestato con successo!"}
     except Exception as e:
         print(f"❌ Errore SDK STOP: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Errore SDK Lightning: {str(e)}")
