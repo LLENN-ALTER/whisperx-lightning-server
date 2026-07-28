@@ -30,6 +30,7 @@ LIGHTNING_STUDIO_ID = os.getenv("LIGHTNING_STUDIO_ID", "01kyf6tebbywg1d835f6ptkg
 LIGHTNING_STUDIO_NAME = os.getenv("LIGHTNING_STUDIO_NAME", "gpu-studio")
 LIGHTNING_STUDIO_URL = os.getenv("LIGHTNING_STUDIO_URL", "https://8001-01kyf6tebbywg1d835f6ptkgt5.cloudspaces.litng.ai")
 TEAMSPACE = os.getenv("LIGHTNING_TEAMSPACE", "get-gpu-project")
+USER_ORG = os.getenv("LIGHTNING_USER_ORG", "xmauri99")
 
 # Configurazione variabili d'ambiente ufficiali per Lightning SDK
 if LIGHTNING_API_KEY:
@@ -195,11 +196,12 @@ def process_subtitles(request: RebuildRequest):
 # CONTROL ENDPOINTS (via Official Lightning SDK)
 # ==========================================
 def _get_lightning_studio():
-    """Tenta la connessione allo Studio usando il teamspace e il nome dello studio."""
+    """Connette lo Studio provando le combinazioni valide con l'utente xmauri99."""
     candidates = [
+        {"name": LIGHTNING_STUDIO_NAME, "teamspace": TEAMSPACE, "user": USER_ORG},
+        {"name": LIGHTNING_STUDIO_NAME, "user": USER_ORG},
         {"name": LIGHTNING_STUDIO_NAME, "teamspace": TEAMSPACE},
-        {"name": f"{TEAMSPACE}/{LIGHTNING_STUDIO_NAME}"},
-        {"name": LIGHTNING_STUDIO_NAME},
+        {"name": LIGHTNING_STUDIO_ID, "user": USER_ORG},
         {"name": LIGHTNING_STUDIO_ID}
     ]
     
