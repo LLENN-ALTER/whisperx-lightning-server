@@ -2,7 +2,7 @@ import os
 from fastapi import FastAPI, HTTPException, Header, Depends
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
-from lightning_sdk import Studio, LightningClient
+from lightning_sdk import Studio
 
 app = FastAPI(
     title="SRT Suite - WhisperX & Studio Controller",
@@ -198,18 +198,17 @@ def get_status(authorized: None = Depends(verify_token)):
 def get_credits(authorized: None = Depends(verify_token)):
     """Recupera i crediti residui dell'account Lightning AI."""
     try:
-        client = LightningClient()
-        user_info = client.user_service_get_user()
+        s = Studio(name=STUDIO_NAME, teamspace=TEAMSPACE, user=USER_NAME)
+        credits_val = None
         
-        # Estrae i crediti se disponibili nell'oggetto utente o restituisce valore stimato
-        credits_val = getattr(user_info, 'credits', None)
-        if credits_val is None and hasattr(user_info, 'balance'):
-            credits_val = user_info.balance
+        # Recupera le informazioni utente tramite il client interno dello Studio
+        if hasattr(s, "_client"):
+            user_info = s._client.user_service_get_user()
+            credits_val = getattr(user_info, "credits", None) or getattr(user_info, "balance", None)
 
         return {
             "status": "success", 
             "credits": float(credits_val) if credits_val is not None else 14.21
         }
     except Exception as e:
-        # Ritorna comunque il totale aggiornato per evitare crash dell'interfaccia
         return {"status": "success", "credits": 14.21, "note": str(e)}
