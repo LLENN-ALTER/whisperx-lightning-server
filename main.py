@@ -194,27 +194,29 @@ async def start_studio(authorized: None = Depends(verify_token)):
         "Content-Type": "application/json"
     }
     
-    # Tentativo 1: Endpoint diretto standard
-    url = f"https://lightning.ai/v1/studios/{LIGHTNING_STUDIO_ID}/start"
-    print(f"🚀 Invio richiesta START a Lightning AI: {url}")
+    # Elenco rotte di tentativo ordinate per priorità secondo specifiche API Lightning
+    candidate_urls = [
+        f"https://lightning.ai/v1/projects/{TEAMSPACE}/studios/{LIGHTNING_STUDIO_ID}/start",
+        f"https://lightning.ai/v1/projects/{TEAMSPACE}/cloudspaces/{LIGHTNING_STUDIO_ID}/start",
+        f"https://lightning.ai/v1/studios/{LIGHTNING_STUDIO_ID}/start",
+    ]
     
     async with httpx.AsyncClient() as client:
-        try:
-            res = await client.post(url, headers=headers, json={})
-            print(f"📥 Risposta Lightning ({res.status_code}): {res.text}")
-            
-            # Tentativo 2: Se risponde 404, proseguiamo col percorso cloudspaces
-            if res.status_code == 404:
-                alt_url = f"https://lightning.ai/v1/cloudspaces/{LIGHTNING_STUDIO_ID}/start"
-                print(f"🔄 Tentativo alternativo (Cloudspaces): {alt_url}")
-                res = await client.post(alt_url, headers=headers, json={})
-                print(f"📥 Risposta Cloudspaces ({res.status_code}): {res.text}")
-
-            if res.status_code in [200, 201, 204]:
-                return {"status": "success", "message": f"Studio '{LIGHTNING_STUDIO_ID}' avviato con successo!"}
-            raise HTTPException(status_code=res.status_code, detail=f"Lightning Error: {res.text}")
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+        last_error = ""
+        for url in candidate_urls:
+            print(f"🚀 Tentativo START a Lightning AI: {url}")
+            try:
+                res = await client.post(url, headers=headers, json={})
+                print(f"📥 Risposta ({res.status_code}): {res.text[:200]}")
+                
+                if res.status_code in [200, 201, 204]:
+                    return {"status": "success", "message": f"Studio '{LIGHTNING_STUDIO_ID}' avviato con successo!"}
+                
+                last_error = f"Status {res.status_code}: {res.text}"
+            except Exception as e:
+                last_error = str(e)
+                
+        raise HTTPException(status_code=500, detail=f"Lightning Error su tutti gli endpoint: {last_error}")
 
 
 @app.post("/api/v1/studio/stop")
@@ -227,24 +229,29 @@ async def stop_studio(authorized: None = Depends(verify_token)):
         "Authorization": f"Bearer {LIGHTNING_API_KEY}",
         "Content-Type": "application/json"
     }
-    url = f"https://lightning.ai/v1/studios/{LIGHTNING_STUDIO_ID}/stop"
     
-    print(f"🛑 Invio richiesta STOP a Lightning AI: {url}")
+    candidate_urls = [
+        f"https://lightning.ai/v1/projects/{TEAMSPACE}/studios/{LIGHTNING_STUDIO_ID}/stop",
+        f"https://lightning.ai/v1/projects/{TEAMSPACE}/cloudspaces/{LIGHTNING_STUDIO_ID}/stop",
+        f"https://lightning.ai/v1/studios/{LIGHTNING_STUDIO_ID}/stop",
+    ]
+    
     async with httpx.AsyncClient() as client:
-        try:
-            res = await client.post(url, headers=headers, json={})
-            
-            if res.status_code == 404:
-                alt_url = f"https://lightning.ai/v1/cloudspaces/{LIGHTNING_STUDIO_ID}/stop"
-                print(f"🔄 Tentativo alternativo (Cloudspaces): {alt_url}")
-                res = await client.post(alt_url, headers=headers, json={})
-
-            print(f"📥 Risposta Lightning ({res.status_code}): {res.text}")
-            if res.status_code in [200, 201, 204]:
-                return {"status": "success", "message": f"Studio '{LIGHTNING_STUDIO_ID}' arrestato con successo!"}
-            raise HTTPException(status_code=res.status_code, detail=f"Lightning Error: {res.text}")
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+        last_error = ""
+        for url in candidate_urls:
+            print(f"🛑 Tentativo STOP a Lightning AI: {url}")
+            try:
+                res = await client.post(url, headers=headers, json={})
+                print(f"📥 Risposta ({res.status_code}): {res.text[:200]}")
+                
+                if res.status_code in [200, 201, 204]:
+                    return {"status": "success", "message": f"Studio '{LIGHTNING_STUDIO_ID}' arrestato con successo!"}
+                
+                last_error = f"Status {res.status_code}: {res.text}"
+            except Exception as e:
+                last_error = str(e)
+                
+        raise HTTPException(status_code=500, detail=f"Lightning Error su tutti gli endpoint: {last_error}")
 
 
 @app.get("/api/v1/studio/status")
@@ -267,4 +274,3 @@ async def get_status(authorized: None = Depends(verify_token)):
 @app.get("/api/v1/credits")
 def get_credits(authorized: None = Depends(verify_token)):
     return {"status": "success", "credits": 14.21}
-    
