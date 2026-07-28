@@ -189,7 +189,16 @@ def get_status(authorized: None = Depends(verify_token)):
     """Recupera lo stato attuale dello Studio."""
     try:
         s = Studio(name=STUDIO_NAME, teamspace=TEAMSPACE, user=USER_NAME)
-        return {"status": "success", "stage": str(s.status.stage)}
+        status_obj = s.status
+        
+        # Gestisce in sicurezza le differenze di attributo tra le versioni dell'SDK
+        stage_val = (
+            getattr(status_obj, "phase", None) 
+            or getattr(status_obj, "stage", None) 
+            or str(status_obj)
+        )
+        
+        return {"status": "success", "stage": str(stage_val)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Errore nel recupero dello stato: {str(e)}")
 
