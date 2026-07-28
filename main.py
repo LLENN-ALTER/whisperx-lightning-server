@@ -7,6 +7,12 @@ from typing import List, Dict, Any, Optional
 from fastapi import FastAPI, HTTPException, Header, Depends, File, UploadFile
 from pydantic import BaseModel
 
+# Import SDK ufficiale Lightning
+try:
+    from lightning_sdk import Studio
+except ImportError:
+    Studio = None
+
 # ==========================================
 # INIZIALIZZAZIONE FASTAPI
 # ==========================================
@@ -32,6 +38,11 @@ def verify_token(authorization: str = Header(None)):
             status_code=401, 
             detail="Non autorizzato. Token di sicurezza mancante o errato."
         )
+
+
+# Imposta la chiave API per la libreria Lightning se presente
+if LIGHTNING_API_KEY:
+    os.environ["LIGHTNING_API_KEY"] = LIGHTNING_API_KEY
 
 
 # ==========================================
@@ -181,77 +192,58 @@ def process_subtitles(request: RebuildRequest):
 
 
 # ==========================================
-# CONTROL ENDPOINTS (REST API Lightning v1)
+# CONTROL ENDPOINTS (via Official Lightning SDK)
 # ==========================================
 @app.post("/api/v1/studio/start")
 async def start_studio(authorized: None = Depends(verify_token)):
     if not LIGHTNING_API_KEY:
-        print("❌ ERRORE: LIGHTNING_API_KEY non trovata nelle variabili d'ambiente di Render!")
         raise HTTPException(status_code=500, detail="LIGHTNING_API_KEY mancante nelle Environment Variables di Render.")
     
-    headers = {
-        "Authorization": f"Bearer {LIGHTNING_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    
-    # Elenco rotte di tentativo ordinate per priorità secondo specifiche API Lightning
-    candidate_urls = [
-        f"https://lightning.ai/v1/projects/{TEAMSPACE}/studios/{LIGHTNING_STUDIO_ID}/start",
-        f"https://lightning.ai/v1/projects/{TEAMSPACE}/cloudspaces/{LIGHTNING_STUDIO_ID}/start",
-        f"https://lightning.ai/v1/studios/{LIGHTNING_STUDIO_ID}/start",
-    ]
-    
-    async with httpx.AsyncClient() as client:
-        last_error = ""
-        for url in candidate_urls:
-            print(f"🚀 Tentativo START a Lightning AI: {url}")
-            try:
-                res = await client.post(url, headers=headers, json={})
-                print(f"📥 Risposta ({res.status_code}): {res.text[:200]}")
-                
-                if res.status_code in [200, 201, 204]:
-                    return {"status": "success", "message": f"Studio '{LIGHTNING_STUDIO_ID}' avviato con successo!"}
-                
-                last_error = f"Status {res.status_code}: {res.text}"
-            except Exception as e:
-                last_error = str(e)
-                
-        raise HTTPException(status_code=500, detail=f"Lightning Error su tutti gli endpoint: {last_error}")
+    if Studio is None:
+        raise HTTPException(status_code=500, detail="lightning-sdk non installato. Aggiungilo a requirements.txt.")
+
+    try:
+        print(f"🚀 Avvio Studio tramite SDK... (ID: {LIGHTNING_STUDIO_ID}, Teamspace: {TEAMSPACE})")
+        
+        # Inizializziamo lo Studio tramite SDK
+        s = Studio(name=LIGHTNING_STUDIO_ID, teamspace=TEAMSPACE)
+        s.start()
+        
+        return {"status": "success", "message": f"Studio '{LIGHTNING_STUDIO_ID}' avviato con successo!"}
+    except Exception as e:
+        print(f"❌ Errore SDK START: {str(e)}")
+        # Tentativo fallback usando solo il nome/ID se il teamspace causa problemi
+        try:
+            s = Studio(name=LIGHTNING_STUDIO_ID)
+            s.start()
+            return {"status": "success", "message": f"Studio '{LIGHTNING_STUDIO_ID}' avviato con successo!"}
+        except Exception as err:
+            raise HTTPException(status_code=500, detail=f"Errore SDK Lightning: {str(err)}")
 
 
 @app.post("/api/v1/studio/stop")
 async def stop_studio(authorized: None = Depends(verify_token)):
     if not LIGHTNING_API_KEY:
-        print("❌ ERRORE: LIGHTNING_API_KEY non trovata nelle variabili d'ambiente di Render!")
         raise HTTPException(status_code=500, detail="LIGHTNING_API_KEY mancante nelle Environment Variables di Render.")
     
-    headers = {
-        "Authorization": f"Bearer {LIGHTNING_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    
-    candidate_urls = [
-        f"https://lightning.ai/v1/projects/{TEAMSPACE}/studios/{LIGHTNING_STUDIO_ID}/stop",
-        f"https://lightning.ai/v1/projects/{TEAMSPACE}/cloudspaces/{LIGHTNING_STUDIO_ID}/stop",
-        f"https://lightning.ai/v1/studios/{LIGHTNING_STUDIO_ID}/stop",
-    ]
-    
-    async with httpx.AsyncClient() as client:
-        last_error = ""
-        for url in candidate_urls:
-            print(f"🛑 Tentativo STOP a Lightning AI: {url}")
-            try:
-                res = await client.post(url, headers=headers, json={})
-                print(f"📥 Risposta ({res.status_code}): {res.text[:200]}")
-                
-                if res.status_code in [200, 201, 204]:
-                    return {"status": "success", "message": f"Studio '{LIGHTNING_STUDIO_ID}' arrestato con successo!"}
-                
-                last_error = f"Status {res.status_code}: {res.text}"
-            except Exception as e:
-                last_error = str(e)
-                
-        raise HTTPException(status_code=500, detail=f"Lightning Error su tutti gli endpoint: {last_error}")
+    if Studio is None:
+        raise HTTPException(status_code=500, detail="lightning-sdk non installato. Aggiungilo a requirements.txt.")
+
+    try:
+        print(f"🛑 Arresto Studio tramite SDK... (ID: {LIGHTNING_STUDIO_ID}, Teamspace: {TEAMSPACE})")
+        
+        s = Studio(name=LIGHTNING_STUDIO_ID, teamspace=TEAMSPACE)
+        s.stop()
+        
+        return {"status": "success", "message": f"Studio '{LIGHTNING_STUDIO_ID}' arrestato con successo!"}
+    except Exception as e:
+        print(f"❌ Errore SDK STOP: {str(e)}")
+        try:
+            s = Studio(name=LIGHTNING_STUDIO_ID)
+            s.stop()
+            return {"status": "success", "message": f"Studio '{LIGHTNING_STUDIO_ID}' arrestato con successo!"}
+        except Exception as err:
+            raise HTTPException(status_code=500, detail=f"Errore SDK Lightning: {str(err)}")
 
 
 @app.get("/api/v1/studio/status")
