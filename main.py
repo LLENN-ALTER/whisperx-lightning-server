@@ -200,43 +200,49 @@ def process_subtitles(request: RebuildRequest):
 # ==========================================
 def _get_lightning_studio():
     """Tenta la connessione con l'SDK usando la sintassi diretta per Studio."""
-    
+    last_err = "Nessun tentativo riuscito"
+
     # Tentativo 1: Nome + Utente + Teamspace
     try:
         print(f"🔍 Tentativo 1 Studio(name='{LIGHTNING_STUDIO_NAME}', user='{USER_NAME}', teamspace='{TEAMSPACE}')")
         return Studio(name=LIGHTNING_STUDIO_NAME, user=USER_NAME, teamspace=TEAMSPACE)
-    except Exception as e:
-        print(f"⚠️ Tentativo 1 fallito: {e}")
+    except Exception as err:
+        last_err = str(err)
+        print(f"⚠️ Tentativo 1 fallito: {err}")
 
     # Tentativo 2: Nome + Utente
     try:
         print(f"🔍 Tentativo 2 Studio(name='{LIGHTNING_STUDIO_NAME}', user='{USER_NAME}')")
         return Studio(name=LIGHTNING_STUDIO_NAME, user=USER_NAME)
-    except Exception as e:
-        print(f"⚠️ Tentativo 2 fallito: {e}")
+    except Exception as err:
+        last_err = str(err)
+        print(f"⚠️ Tentativo 2 fallito: {err}")
 
     # Tentativo 3: ID + Utente
     try:
         print(f"🔍 Tentativo 3 Studio(name='{LIGHTNING_STUDIO_ID}', user='{USER_NAME}')")
         return Studio(name=LIGHTNING_STUDIO_ID, user=USER_NAME)
-    except Exception as e:
-        print(f"⚠️ Tentativo 3 fallito: {e}")
+    except Exception as err:
+        last_err = str(err)
+        print(f"⚠️ Tentativo 3 fallito: {err}")
 
     # Tentativo 4: ID + Teamspace
     try:
         print(f"🔍 Tentativo 4 Studio(name='{LIGHTNING_STUDIO_ID}', teamspace='{TEAMSPACE}')")
         return Studio(name=LIGHTNING_STUDIO_ID, teamspace=TEAMSPACE)
-    except Exception as e:
-        print(f"⚠️ Tentativo 4 fallito: {e}")
+    except Exception as err:
+        last_err = str(err)
+        print(f"⚠️ Tentativo 4 fallito: {err}")
 
     # Tentativo 5: Solo ID
     try:
         print(f"🔍 Tentativo 5 Studio('{LIGHTNING_STUDIO_ID}')")
         return Studio(LIGHTNING_STUDIO_ID)
-    except Exception as e:
-        print(f"⚠️ Tentativo 5 fallito: {e}")
+    except Exception as err:
+        last_err = str(err)
+        print(f"⚠️ Tentativo 5 fallito: {err}")
 
-    raise Exception(f"Impossibile collegare lo Studio tramite SDK. Errore finale: {str(e)}")
+    raise Exception(f"Impossibile collegare lo Studio tramite SDK. Errore finale: {last_err}")
 
 
 @app.post("/api/v1/studio/start")
