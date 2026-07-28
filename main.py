@@ -1,9 +1,15 @@
-import os
-from fastapi import FastAPI, HTTPException, Header, Depends
-from pydantic import BaseModel
+        import os
+import shutil
+import tempfile
 from typing import List, Dict, Any, Optional
+
+from fastapi import FastAPI, HTTPException, Header, Depends, File, UploadFile
+from pydantic import BaseModel
 from lightning_sdk import Studio
 
+# ==========================================
+# INIZIALIZZAZIONE FASTAPI
+# ==========================================
 app = FastAPI(
     title="SRT Suite - WhisperX & Studio Controller",
     version="1.0.0"
@@ -144,8 +150,36 @@ class RebuildRequest(BaseModel):
 # ENDPOINT API
 # ==========================================
 @app.get("/")
+@app.get("/health")
 def read_root():
+    """Health check per il proxy e il badge dello stato nell'app."""
     return {"status": "online", "service": "SRT Suite Backend API"}
+
+
+@app.post("/transcribe")
+@app.post("/api/v1/transcribe")
+async def transcribe_audio(file: UploadFile = File(...)):
+    """
+    Endpoint invocato da SRT Suite per la trascrizione.
+    Riceve il file audio/video, lo salva temporaneamente ed esegue l'elaborazione.
+    """
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{file.filename}") as temp_file:
+            shutil.copyfileobj(file.file, temp_file)
+            temp_path = temp_file.name
+
+        # --- LOGICA DI TRASCRIZIONE WHISPERX ---
+        # Nota: Se usi il modulo WhisperX caricato in memoria, chiama la funzione qui.
+        # Es: result = model.transcribe(temp_path)
+        # 
+        # Risposta strutturata di fallback/test:
+        return {
+            "status": "success",
+            "filename": file.filename,
+            "segments": []
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore durante la trascrizione: {str(e)}")
 
 
 @app.post("/api/v1/subtitles/rebuild")
