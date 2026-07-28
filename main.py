@@ -1,8 +1,6 @@
 import os
-import shutil
-import tempfile
 import httpx
-from typing import List, Dict, Any, Optional
+from typing import Dict, Any, Optional
 
 from fastapi import FastAPI, HTTPException, Header, Depends, File, UploadFile
 from pydantic import BaseModel
@@ -30,15 +28,16 @@ LIGHTNING_STUDIO_ID = os.getenv("LIGHTNING_STUDIO_ID", "01kyf6tebbywg1d835f6ptkg
 LIGHTNING_STUDIO_NAME = os.getenv("LIGHTNING_STUDIO_NAME", "gpu-studio")
 LIGHTNING_STUDIO_URL = os.getenv("LIGHTNING_STUDIO_URL", "https://8001-01kyf6tebbywg1d835f6ptkgt5.cloudspaces.litng.ai")
 
+# Recuperiamo i nomi prima di pulirli
 USER_NAME = os.getenv("LIGHTNING_USER", "xmauri99")
 ORG_NAME = os.getenv("LIGHTNING_TEAMSPACE", "xmauri99-org")
 
-# Variabili d'ambiente per l'SDK
+# Ci assicuriamo che l'API KEY sia presente per l'autenticazione
 if LIGHTNING_API_KEY:
     os.environ["LIGHTNING_API_KEY"] = LIGHTNING_API_KEY
 
-os.environ["LIGHTNING_USER"] = USER_NAME
-os.environ["LIGHTNING_USERNAME"] = USER_NAME
+# ATTENZIONE: Abbiamo rimosso l'impostazione globale in os.environ 
+# di LIGHTNING_USER e LIGHTNING_USERNAME perché "avvelenavano" l'SDK.
 
 
 # ==========================================
@@ -198,47 +197,43 @@ def process_subtitles(request: RebuildRequest):
 # CONTROL ENDPOINTS (via Official Lightning SDK)
 # ==========================================
 def _get_lightning_studio():
-    """Inizializzazione diretta dello Studio passando user o org esplicitamente."""
+    """Inizializza lo Studio DOPO aver purgato le variabili d'ambiente tossiche."""
     if Studio is None:
         raise Exception("lightning-sdk non installato.")
 
+    # PURGA DELL'AMBIENTE: Rimuoviamo qualsiasi traccia di user/org dalle env vars
+    # in modo che l'SDK non le concateni erroneamente agli argomenti.
+    toxic_vars = [
+        "LIGHTNING_USER", "LIGHTNING_USERNAME", "LIGHTNING_TEAMSPACE",
+        "LIGHTNING_USER_ORG", "LIGHTNING_ORGANIZATION", "LIGHTNING_ORG"
+    ]
+    for var in toxic_vars:
+        os.environ.pop(var, None)
+
     last_errors = []
 
-    # Strategy 1: Utilizza la combinazione org + name
+    # Strategia 1: Solo ID (Essendo l'ambiente pulito, il server Lightning 
+    # dovrebbe risolvere il path usando solo l'API KEY e l'ID)
     try:
-        print(f"🔍 Strategia 1: Studio('{LIGHTNING_STUDIO_NAME}', org='{ORG_NAME}')")
-        return Studio(name=LIGHTNING_STUDIO_NAME, org=ORG_NAME)
+        print(f"🔍 Strategia 1 (Ambiente pulito): Studio('{LIGHTNING_STUDIO_ID}')")
+        return Studio(LIGHTNING_STUDIO_ID)
     except Exception as err:
         last_errors.append(f"Strat 1: {err}")
 
-    # Strategy 2: Utilizza il path 'org/studio_name'
+    # Strategia 2: ID + Org esplicita
     try:
-        path = f"{ORG_NAME}/{LIGHTNING_STUDIO_NAME}"
-        print(f"🔍 Strategia 2: Studio('{path}')")
-        return Studio(name=path)
+        print(f"🔍 Strategia 2 (Ambiente pulito): Studio('{LIGHTNING_STUDIO_ID}', org='{ORG_NAME}')")
+        return Studio(name=LIGHTNING_STUDIO_ID, org=ORG_NAME)
     except Exception as err:
         last_errors.append(f"Strat 2: {err}")
 
-    # Strategy 3: Utilizza user + teamspace
+    # Strategia 3: Path Assoluto text-based
     try:
-        print(f"🔍 Strategia 3: Studio('{LIGHTNING_STUDIO_NAME}', user='{USER_NAME}', teamspace='{ORG_NAME}')")
-        return Studio(name=LIGHTNING_STUDIO_NAME, user=USER_NAME, teamspace=ORG_NAME)
+        path = f"{ORG_NAME}/{LIGHTNING_STUDIO_NAME}"
+        print(f"🔍 Strategia 3 (Ambiente pulito): Studio('{path}')")
+        return Studio(name=path)
     except Exception as err:
         last_errors.append(f"Strat 3: {err}")
-
-    # Strategy 4: Utilizza l'ID Studio + org
-    try:
-        print(f"🔍 Strategia 4: Studio('{LIGHTNING_STUDIO_ID}', org='{ORG_NAME}')")
-        return Studio(name=LIGHTNING_STUDIO_ID, org=ORG_NAME)
-    except Exception as err:
-        last_errors.append(f"Strat 4: {err}")
-
-    # Strategy 5: Utilizza l'ID Studio + user
-    try:
-        print(f"🔍 Strategia 5: Studio('{LIGHTNING_STUDIO_ID}', user='{USER_NAME}')")
-        return Studio(name=LIGHTNING_STUDIO_ID, user=USER_NAME)
-    except Exception as err:
-        last_errors.append(f"Strat 5: {err}")
 
     raise Exception(" | ".join(last_errors))
 
@@ -249,7 +244,7 @@ async def start_studio(authorized: None = Depends(verify_token)):
         raise HTTPException(status_code=500, detail="LIGHTNING_API_KEY mancante nelle Environment Variables di Render.")
 
     try:
-        print("🚀 Avvio Studio tramite SDK...")
+        print("🚀 Avvio Studio tramite SDK (Clean Env)...")
         s = _get_lightning_studio()
         s.start()
         return {"status": "success", "message": "Studio avviato con successo!"}
@@ -264,7 +259,7 @@ async def stop_studio(authorized: None = Depends(verify_token)):
         raise HTTPException(status_code=500, detail="LIGHTNING_API_KEY mancante nelle Environment Variables di Render.")
 
     try:
-        print("🛑 Arresto Studio tramite SDK...")
+        print("🛑 Arresto Studio tramite SDK (Clean Env)...")
         s = _get_lightning_studio()
         s.stop()
         return {"status": "success", "message": "Studio arrestato con successo!"}
