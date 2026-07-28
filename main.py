@@ -23,7 +23,7 @@ STUDIO_NAME = os.getenv("LIGHTNING_STUDIO_NAME", "gpu-studio")
 TEAMSPACE = os.getenv("LIGHTNING_TEAMSPACE", "get-gpu-project")
 USER_NAME = os.getenv("LIGHTNING_USER", "xmauri99")
 
-# URL e Chiavi Lightning
+# URL e Chiavi Lightning (Recupera da Env Var con fallback)
 LIGHTNING_STUDIO_URL = os.getenv("LIGHTNING_STUDIO_URL", "https://8001-01kyf6tebbywg1d835f6ptkgt5.cloudspaces.litng.ai")
 LIGHTNING_API_KEY = os.getenv("LIGHTNING_API_KEY", "")
 
@@ -189,37 +189,43 @@ def process_subtitles(request: RebuildRequest):
 @app.post("/api/v1/studio/start")
 async def start_studio(authorized: None = Depends(verify_token)):
     if not LIGHTNING_API_KEY:
-        print("❌ ERRORE: LIGHTNING_API_KEY mancante!")
-        raise HTTPException(status_code=500, detail="LIGHTNING_API_KEY non configurata nelle variabili d'ambiente di Render.")
+        print("❌ ERRORE: LIGHTNING_API_KEY non trovata nelle variabili d'ambiente di Render!")
+        raise HTTPException(status_code=500, detail="LIGHTNING_API_KEY mancante nelle Environment Variables di Render.")
     
     headers = {"Authorization": f"Bearer {LIGHTNING_API_KEY}", "Content-Type": "application/json"}
     url = f"https://lightning.ai/v1/projects/{TEAMSPACE}/studios/{STUDIO_NAME}/start"
     
-    print(f"🚀 Invio START a Lightning: {url}")
+    print(f"🚀 Invio richiesta START a Lightning AI: {url}")
     async with httpx.AsyncClient() as client:
-        res = await client.post(url, headers=headers)
-        print(f"📥 Risposta Lightning ({res.status_code}): {res.text}")
-        if res.status_code in [200, 201]:
-            return {"status": "success", "message": f"Studio '{STUDIO_NAME}' avviato via API REST!"}
-        raise HTTPException(status_code=res.status_code, detail=f"Errore Lightning: {res.text}")
+        try:
+            res = await client.post(url, headers=headers)
+            print(f"📥 Risposta Lightning ({res.status_code}): {res.text}")
+            if res.status_code in [200, 201]:
+                return {"status": "success", "message": f"Studio '{STUDIO_NAME}' avviato con successo!"}
+            raise HTTPException(status_code=res.status_code, detail=f"Lightning Error: {res.text}")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/v1/studio/stop")
 async def stop_studio(authorized: None = Depends(verify_token)):
     if not LIGHTNING_API_KEY:
-        print("❌ ERRORE: LIGHTNING_API_KEY mancante!")
-        raise HTTPException(status_code=500, detail="LIGHTNING_API_KEY non configurata nelle variabili d'ambiente di Render.")
+        print("❌ ERRORE: LIGHTNING_API_KEY non trovata nelle variabili d'ambiente di Render!")
+        raise HTTPException(status_code=500, detail="LIGHTNING_API_KEY mancante nelle Environment Variables di Render.")
     
     headers = {"Authorization": f"Bearer {LIGHTNING_API_KEY}", "Content-Type": "application/json"}
     url = f"https://lightning.ai/v1/projects/{TEAMSPACE}/studios/{STUDIO_NAME}/stop"
     
-    print(f"🛑 Invio STOP a Lightning: {url}")
+    print(f"🛑 Invio richiesta STOP a Lightning AI: {url}")
     async with httpx.AsyncClient() as client:
-        res = await client.post(url, headers=headers)
-        print(f"📥 Risposta Lightning ({res.status_code}): {res.text}")
-        if res.status_code in [200, 201]:
-            return {"status": "success", "message": f"Studio '{STUDIO_NAME}' arrestato via API REST!"}
-        raise HTTPException(status_code=res.status_code, detail=f"Errore Lightning: {res.text}")
+        try:
+            res = await client.post(url, headers=headers)
+            print(f"📥 Risposta Lightning ({res.status_code}): {res.text}")
+            if res.status_code in [200, 201]:
+                return {"status": "success", "message": f"Studio '{STUDIO_NAME}' arrestato con successo!"}
+            raise HTTPException(status_code=res.status_code, detail=f"Lightning Error: {res.text}")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/v1/studio/status")
