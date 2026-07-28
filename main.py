@@ -19,13 +19,9 @@ app = FastAPI(
 # CONFIGURAZIONE AMBIENTE E STUDIO
 # ==========================================
 APP_SECRET_KEY = os.getenv("APP_SECRET_KEY", "SRT_SUITE_SECRET_TOKEN_2026")
-STUDIO_NAME = os.getenv("LIGHTNING_STUDIO_NAME", "gpu-studio")
-TEAMSPACE = os.getenv("LIGHTNING_TEAMSPACE", "get-gpu-project")
-USER_NAME = os.getenv("LIGHTNING_USER", "xmauri99")
-
-# URL e Chiavi Lightning (Recupera da Env Var con fallback)
-LIGHTNING_STUDIO_URL = os.getenv("LIGHTNING_STUDIO_URL", "https://8001-01kyf6tebbywg1d835f6ptkgt5.cloudspaces.litng.ai")
 LIGHTNING_API_KEY = os.getenv("LIGHTNING_API_KEY", "")
+LIGHTNING_STUDIO_ID = os.getenv("LIGHTNING_STUDIO_ID", "01kyf6tebbywg1d835f6ptkgt5")
+LIGHTNING_STUDIO_URL = os.getenv("LIGHTNING_STUDIO_URL", "https://8001-01kyf6tebbywg1d835f6ptkgt5.cloudspaces.litng.ai")
 
 
 def verify_token(authorization: str = Header(None)):
@@ -184,7 +180,7 @@ def process_subtitles(request: RebuildRequest):
 
 
 # ==========================================
-# CONTROL ENDPOINTS (REST API Lightning)
+# CONTROL ENDPOINTS (REST API Lightning v1)
 # ==========================================
 @app.post("/api/v1/studio/start")
 async def start_studio(authorized: None = Depends(verify_token)):
@@ -192,16 +188,19 @@ async def start_studio(authorized: None = Depends(verify_token)):
         print("❌ ERRORE: LIGHTNING_API_KEY non trovata nelle variabili d'ambiente di Render!")
         raise HTTPException(status_code=500, detail="LIGHTNING_API_KEY mancante nelle Environment Variables di Render.")
     
-    headers = {"Authorization": f"Bearer {LIGHTNING_API_KEY}", "Content-Type": "application/json"}
-    url = f"https://lightning.ai/v1/projects/{TEAMSPACE}/studios/{STUDIO_NAME}/start"
+    headers = {
+        "Authorization": f"Bearer {LIGHTNING_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    url = f"https://lightning.ai/v1/studios/{LIGHTNING_STUDIO_ID}/start"
     
-    print(f"🚀 Invio richiesta START a Lightning AI: {url}")
+    print(f"🚀 Invio richiesta START a Lightning AI per Studio ID: {LIGHTNING_STUDIO_ID}")
     async with httpx.AsyncClient() as client:
         try:
             res = await client.post(url, headers=headers)
             print(f"📥 Risposta Lightning ({res.status_code}): {res.text}")
-            if res.status_code in [200, 201]:
-                return {"status": "success", "message": f"Studio '{STUDIO_NAME}' avviato con successo!"}
+            if res.status_code in [200, 201, 204]:
+                return {"status": "success", "message": f"Studio '{LIGHTNING_STUDIO_ID}' avviato con successo!"}
             raise HTTPException(status_code=res.status_code, detail=f"Lightning Error: {res.text}")
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
@@ -213,16 +212,19 @@ async def stop_studio(authorized: None = Depends(verify_token)):
         print("❌ ERRORE: LIGHTNING_API_KEY non trovata nelle variabili d'ambiente di Render!")
         raise HTTPException(status_code=500, detail="LIGHTNING_API_KEY mancante nelle Environment Variables di Render.")
     
-    headers = {"Authorization": f"Bearer {LIGHTNING_API_KEY}", "Content-Type": "application/json"}
-    url = f"https://lightning.ai/v1/projects/{TEAMSPACE}/studios/{STUDIO_NAME}/stop"
+    headers = {
+        "Authorization": f"Bearer {LIGHTNING_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    url = f"https://lightning.ai/v1/studios/{LIGHTNING_STUDIO_ID}/stop"
     
-    print(f"🛑 Invio richiesta STOP a Lightning AI: {url}")
+    print(f"🛑 Invio richiesta STOP a Lightning AI per Studio ID: {LIGHTNING_STUDIO_ID}")
     async with httpx.AsyncClient() as client:
         try:
             res = await client.post(url, headers=headers)
             print(f"📥 Risposta Lightning ({res.status_code}): {res.text}")
-            if res.status_code in [200, 201]:
-                return {"status": "success", "message": f"Studio '{STUDIO_NAME}' arrestato con successo!"}
+            if res.status_code in [200, 201, 204]:
+                return {"status": "success", "message": f"Studio '{LIGHTNING_STUDIO_ID}' arrestato con successo!"}
             raise HTTPException(status_code=res.status_code, detail=f"Lightning Error: {res.text}")
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
