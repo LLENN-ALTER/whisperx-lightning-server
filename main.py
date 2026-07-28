@@ -32,9 +32,12 @@ LIGHTNING_STUDIO_URL = os.getenv("LIGHTNING_STUDIO_URL", "https://8001-01kyf6teb
 TEAMSPACE = os.getenv("LIGHTNING_TEAMSPACE", "get-gpu-project")
 USER_ORG = os.getenv("LIGHTNING_USER_ORG", "xmauri99-org")
 
-# Configura l'API Key globale per l'SDK
+# Imposta le variabili d'ambiente usate nativamente dall'SDK Lightning
 if LIGHTNING_API_KEY:
     os.environ["LIGHTNING_API_KEY"] = LIGHTNING_API_KEY
+    os.environ["LIGHTNING_USER"] = USER_ORG
+    os.environ["LIGHTNING_ORG"] = USER_ORG
+    os.environ["LIGHTNING_TEAMSPACE"] = TEAMSPACE
 
 
 # ==========================================
@@ -196,7 +199,7 @@ def process_subtitles(request: RebuildRequest):
 # CONTROL ENDPOINTS (via Official Lightning SDK)
 # ==========================================
 def _get_lightning_studio():
-    """Tenta l'istanziazione dello Studio provando i formati di percorso esatti dell'SDK."""
+    """Tenta l'istanziazione dello Studio provando le combinazioni possibili di percorso."""
     candidates = [
         f"{TEAMSPACE}/{LIGHTNING_STUDIO_NAME}",
         f"{USER_ORG}/{LIGHTNING_STUDIO_NAME}",
@@ -209,7 +212,7 @@ def _get_lightning_studio():
     for target in candidates:
         try:
             print(f"🔍 Tentativo SDK Studio target: '{target}'")
-            s = Studio(name=target, api_key=LIGHTNING_API_KEY)
+            s = Studio(name=target)
             return s
         except Exception as e:
             print(f"⚠️ Fallito '{target}': {str(e)}")
