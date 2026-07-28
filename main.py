@@ -20,15 +20,12 @@ app = FastAPI(
 # ==========================================
 APP_SECRET_KEY = os.getenv("APP_SECRET_KEY", "SRT_SUITE_SECRET_TOKEN_2026")
 STUDIO_NAME = os.getenv("LIGHTNING_STUDIO_NAME", "gpu-studio")
+TEAMSPACE = os.getenv("LIGHTNING_TEAMSPACE", "get-gpu-project")
+USER_NAME = os.getenv("LIGHTNING_USER", "xmauri99")
 
-# Sostituisci "xmauri99-org" con il nome esatto del tuo Teamspace se differisce
-TEAMSPACE = os.getenv("LIGHTNING_TEAMSPACE", "xmauri99-org")
-
-# URL e Chiavi Lightning 
-LIGHTNING_STUDIO_URL = "https://8001-01kyf6tebbywg1d835f6ptkgt5.cloudspaces.litng.ai"
-
-# INSERISCI QUI LA TUA LIGHTNING API KEY SE NON L'HAI MESSA NELLE ENV VARS DI RENDER
-LIGHTNING_API_KEY = os.getenv("LIGHTNING_API_KEY", "INSERISCI_QUI_LA_TUA_LIGHTNING_API_KEY")
+# URL e Chiavi Lightning
+LIGHTNING_STUDIO_URL = os.getenv("LIGHTNING_STUDIO_URL", "https://8001-01kyf6tebbywg1d835f6ptkgt5.cloudspaces.litng.ai")
+LIGHTNING_API_KEY = os.getenv("LIGHTNING_API_KEY", "")
 
 
 def verify_token(authorization: str = Header(None)):
@@ -151,6 +148,9 @@ def read_root():
 @app.post("/transcribe")
 @app.post("/api/v1/transcribe")
 async def transcribe_audio(file: UploadFile = File(...)):
+    """
+    Inoltra il file audio allo Studio Lightning AI per la trascrizione reale.
+    """
     if not LIGHTNING_STUDIO_URL:
         raise HTTPException(status_code=500, detail="LIGHTNING_STUDIO_URL non configurato su Render.")
         
@@ -188,67 +188,55 @@ def process_subtitles(request: RebuildRequest):
 # ==========================================
 @app.post("/api/v1/studio/start")
 async def start_studio(authorized: None = Depends(verify_token)):
-    if not LIGHTNING_API_KEY or LIGHTNING_API_KEY == "INSERISCI_QUI_LA_TUA_LIGHTNING_API_KEY":
-        print("❌ LIGHTNING_API_KEY non configurata!")
-        raise HTTPException(status_code=500, detail="LIGHTNING_API_KEY mancante sul proxy Render.")
+    if not LIGHTNING_API_KEY:
+        print("❌ ERRORE: LIGHTNING_API_KEY mancante!")
+        raise HTTPException(status_code=500, detail="LIGHTNING_API_KEY non configurata nelle variabili d'ambiente di Render.")
     
-    headers = {
-        "Authorization": f"Bearer {LIGHTNING_API_KEY}", 
-        "Content-Type": "application/json"
-    }
+    headers = {"Authorization": f"Bearer {LIGHTNING_API_KEY}", "Content-Type": "application/json"}
     url = f"https://lightning.ai/v1/projects/{TEAMSPACE}/studios/{STUDIO_NAME}/start"
     
-    print(f"🚀 Chiamata START inviata a: {url}")
-    
+    print(f"🚀 Invio START a Lightning: {url}")
     async with httpx.AsyncClient() as client:
-        try:
-            res = await client.post(url, headers=headers)
-            print(f"📥 Risposta Lightning ({res.status_code}): {res.text}")
-            
-            if res.status_code in [200, 201]:
-                return {"status": "success", "message": f"Studio '{STUDIO_NAME}' avviato via API REST!"}
-            else:
-                raise HTTPException(status_code=res.status_code, detail=f"Lightning Error: {res.text}")
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+        res = await client.post(url, headers=headers)
+        print(f"📥 Risposta Lightning ({res.status_code}): {res.text}")
+        if res.status_code in [200, 201]:
+            return {"status": "success", "message": f"Studio '{STUDIO_NAME}' avviato via API REST!"}
+        raise HTTPException(status_code=res.status_code, detail=f"Errore Lightning: {res.text}")
 
 
 @app.post("/api/v1/studio/stop")
 async def stop_studio(authorized: None = Depends(verify_token)):
-    if not LIGHTNING_API_KEY or LIGHTNING_API_KEY == "INSERISCI_QUI_LA_TUA_LIGHTNING_API_KEY":
-        raise HTTPException(status_code=500, detail="LIGHTNING_API_KEY mancante sul proxy Render.")
+    if not LIGHTNING_API_KEY:
+        print("❌ ERRORE: LIGHTNING_API_KEY mancante!")
+        raise HTTPException(status_code=500, detail="LIGHTNING_API_KEY non configurata nelle variabili d'ambiente di Render.")
     
-    headers = {
-        "Authorization": f"Bearer {LIGHTNING_API_KEY}", 
-        "Content-Type": "application/json"
-    }
+    headers = {"Authorization": f"Bearer {LIGHTNING_API_KEY}", "Content-Type": "application/json"}
     url = f"https://lightning.ai/v1/projects/{TEAMSPACE}/studios/{STUDIO_NAME}/stop"
     
+    print(f"🛑 Invio STOP a Lightning: {url}")
     async with httpx.AsyncClient() as client:
-        try:
-            res = await client.post(url, headers=headers)
-            if res.status_code in [200, 201]:
-                return {"status": "success", "message": f"Studio '{STUDIO_NAME}' arrestato via API REST!"}
-            raise HTTPException(status_code=res.status_code, detail=f"Lightning Error: {res.text}")
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+        res = await client.post(url, headers=headers)
+        print(f"📥 Risposta Lightning ({res.status_code}): {res.text}")
+        if res.status_code in [200, 201]:
+            return {"status": "success", "message": f"Studio '{STUDIO_NAME}' arrestato via API REST!"}
+        raise HTTPException(status_code=res.status_code, detail=f"Errore Lightning: {res.text}")
 
 
 @app.get("/api/v1/studio/status")
 async def get_status(authorized: None = Depends(verify_token)):
     if not LIGHTNING_STUDIO_URL:
-        return {"status": "success", "stage": "Not Configured"}
+        return {"status": "stopped", "stage": "Not Configured"}
     
     # Controlla se lo Studio su Lightning è raggiungibile (porta 8001)
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
             res = await client.get(f"{LIGHTNING_STUDIO_URL.rstrip('/')}/health")
             if res.status_code == 200:
-                return {"status": "success", "stage": "Running"}
+                return {"status": "running", "stage": "Running"}
     except Exception:
         pass
         
-    return {"status": "success", "stage": "Stopped"}
+    return {"status": "stopped", "stage": "Stopped"}
 
 
 @app.get("/api/v1/credits")
