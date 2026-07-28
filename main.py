@@ -5,13 +5,12 @@ from typing import Dict, Any, Optional
 from fastapi import FastAPI, HTTPException, Header, Depends, File, UploadFile
 from pydantic import BaseModel
 
-# Import SDK e Client ufficiale Lightning
+# Import SDK ufficiale Lightning
 try:
-    from lightning_sdk import Studio
-    from lightning_sdk.lightning_cloud.rest_client import LightningClient
+    from lightning_sdk import Studio, Teamspace
 except ImportError:
     Studio = None
-    LightningClient = None
+    Teamspace = None
 
 # ==========================================
 # INIZIALIZZAZIONE FASTAPI
@@ -191,38 +190,46 @@ def process_subtitles(request: RebuildRequest):
 
 
 # ==========================================
-# CONTROL ENDPOINTS (Client Nativ-Direct)
+# CONTROL ENDPOINTS (Teamspace & Studio Connect)
 # ==========================================
 def _get_studio_instance():
-    """Recupera l'oggetto Studio risolvendo l'ID direttamente dal client di rete."""
+    """Connette allo Studio inizializzando prima la classe Teamspace dell'organizzazione."""
     if Studio is None:
         raise Exception("lightning-sdk non installato.")
 
-    last_errors = []
+    errors = []
 
-    # Tentativo 1: Studio con org e teamspace predefinito 'default'
+    # Opzione 1: Uso della classe Teamspace per organizzazioni
+    if Teamspace is not None:
+        try:
+            print(f"🔍 Opzione 1: Teamspace(org='{ORG_NAME}').get_studio('{LIGHTNING_STUDIO_NAME}')")
+            ts = Teamspace(org=ORG_NAME)
+            return ts.get_studio(LIGHTNING_STUDIO_NAME)
+        except Exception as e:
+            errors.append(f"Opzione 1: {e}")
+
+        try:
+            print(f"🔍 Opzione 2: Teamspace(name='{ORG_NAME}').get_studio('{LIGHTNING_STUDIO_NAME}')")
+            ts = Teamspace(name=ORG_NAME)
+            return ts.get_studio(LIGHTNING_STUDIO_NAME)
+        except Exception as e:
+            errors.append(f"Opzione 2: {e}")
+
+    # Opzione 3: Inizializzazione diretta Studio specificando nome e org
     try:
-        print(f"🔍 Tentativo 1: Studio('{LIGHTNING_STUDIO_NAME}', teamspace='default', org='{ORG_NAME}')")
-        return Studio(name=LIGHTNING_STUDIO_NAME, teamspace="default", org=ORG_NAME)
-    except Exception as err:
-        last_errors.append(f"T1: {err}")
+        print(f"🔍 Opzione 3: Studio(name='{LIGHTNING_STUDIO_NAME}', org='{ORG_NAME}')")
+        return Studio(name=LIGHTNING_STUDIO_NAME, org=ORG_NAME)
+    except Exception as e:
+        errors.append(f"Opzione 3: {e}")
 
-    # Tentativo 2: Studio con org e nome studio uguale all'org
+    # Opzione 4: Inizializzazione diretta Studio con user e org
     try:
-        print(f"🔍 Tentativo 2: Studio('{LIGHTNING_STUDIO_NAME}', teamspace='{ORG_NAME}')")
-        return Studio(name=LIGHTNING_STUDIO_NAME, teamspace=ORG_NAME)
-    except Exception as err:
-        last_errors.append(f"T2: {err}")
+        print(f"🔍 Opzione 4: Studio(name='{LIGHTNING_STUDIO_NAME}', user='{USER_NAME}', org='{ORG_NAME}')")
+        return Studio(name=LIGHTNING_STUDIO_NAME, user=USER_NAME, org=ORG_NAME)
+    except Exception as e:
+        errors.append(f"Opzione 4: {e}")
 
-    # Tentativo 3: Studio con il path completo 'xmauri99-org/default/gpu-studio'
-    try:
-        path = f"{ORG_NAME}/default/{LIGHTNING_STUDIO_NAME}"
-        print(f"🔍 Tentativo 3: Studio('{path}')")
-        return Studio(name=path)
-    except Exception as err:
-        last_errors.append(f"T3: {err}")
-
-    raise Exception(" | ".join(last_errors))
+    raise Exception(" | ".join(errors))
 
 
 @app.post("/api/v1/studio/start")
