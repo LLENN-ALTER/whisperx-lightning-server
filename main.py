@@ -22,6 +22,7 @@ APP_SECRET_KEY = os.getenv("APP_SECRET_KEY", "SRT_SUITE_SECRET_TOKEN_2026")
 LIGHTNING_API_KEY = os.getenv("LIGHTNING_API_KEY", "")
 LIGHTNING_STUDIO_ID = os.getenv("LIGHTNING_STUDIO_ID", "01kyf6tebbywg1d835f6ptkgt5")
 LIGHTNING_STUDIO_URL = os.getenv("LIGHTNING_STUDIO_URL", "https://8001-01kyf6tebbywg1d835f6ptkgt5.cloudspaces.litng.ai")
+TEAMSPACE = os.getenv("LIGHTNING_TEAMSPACE", "get-gpu-project")
 
 
 def verify_token(authorization: str = Header(None)):
@@ -180,7 +181,7 @@ def process_subtitles(request: RebuildRequest):
 
 
 # ==========================================
-# CONTROL ENDPOINTS (REST API Lightning v1)
+# CONTROL ENDPOINTS (REST API Lightning v1 con Project Scope)
 # ==========================================
 @app.post("/api/v1/studio/start")
 async def start_studio(authorized: None = Depends(verify_token)):
@@ -192,9 +193,9 @@ async def start_studio(authorized: None = Depends(verify_token)):
         "Authorization": f"Bearer {LIGHTNING_API_KEY}",
         "Content-Type": "application/json"
     }
-    url = f"https://lightning.ai/v1/studios/{LIGHTNING_STUDIO_ID}/start"
+    url = f"https://lightning.ai/v1/projects/{TEAMSPACE}/studios/{LIGHTNING_STUDIO_ID}/start"
     
-    print(f"🚀 Invio richiesta START a Lightning AI per Studio ID: {LIGHTNING_STUDIO_ID}")
+    print(f"🚀 Invio richiesta START a Lightning AI: {url}")
     async with httpx.AsyncClient() as client:
         try:
             res = await client.post(url, headers=headers)
@@ -216,9 +217,9 @@ async def stop_studio(authorized: None = Depends(verify_token)):
         "Authorization": f"Bearer {LIGHTNING_API_KEY}",
         "Content-Type": "application/json"
     }
-    url = f"https://lightning.ai/v1/studios/{LIGHTNING_STUDIO_ID}/stop"
+    url = f"https://lightning.ai/v1/projects/{TEAMSPACE}/studios/{LIGHTNING_STUDIO_ID}/stop"
     
-    print(f"🛑 Invio richiesta STOP a Lightning AI per Studio ID: {LIGHTNING_STUDIO_ID}")
+    print(f"🛑 Invio richiesta STOP a Lightning AI: {url}")
     async with httpx.AsyncClient() as client:
         try:
             res = await client.post(url, headers=headers)
