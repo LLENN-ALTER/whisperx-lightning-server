@@ -9,9 +9,10 @@ from pydantic import BaseModel
 
 # Import SDK ufficiale Lightning
 try:
-    from lightning_sdk import Studio
+    from lightning_sdk import Studio, Teamspace
 except ImportError:
     Studio = None
+    Teamspace = None
 
 # ==========================================
 # INIZIALIZZAZIONE FASTAPI
@@ -30,18 +31,17 @@ LIGHTNING_STUDIO_ID = os.getenv("LIGHTNING_STUDIO_ID", "01kyf6tebbywg1d835f6ptkg
 LIGHTNING_STUDIO_NAME = os.getenv("LIGHTNING_STUDIO_NAME", "gpu-studio")
 LIGHTNING_STUDIO_URL = os.getenv("LIGHTNING_STUDIO_URL", "https://8001-01kyf6tebbywg1d835f6ptkgt5.cloudspaces.litng.ai")
 
+# Separazione netta: USER è l'utente, ORG è l'organizzazione
 USER_NAME = os.getenv("LIGHTNING_USER") or "xmauri99"
 ORG_NAME = os.getenv("LIGHTNING_TEAMSPACE") or "xmauri99-org"
 
-# Configurazione variabili d'ambiente per forzare l'SDK ad usare l'organizzazione
+# Impostazione ambiente SDK
 if LIGHTNING_API_KEY:
     os.environ["LIGHTNING_API_KEY"] = LIGHTNING_API_KEY
 
-os.environ["LIGHTNING_USER"] = ORG_NAME
-os.environ["LIGHTNING_USERNAME"] = ORG_NAME
+os.environ["LIGHTNING_USER"] = USER_NAME
+os.environ["LIGHTNING_USERNAME"] = USER_NAME
 os.environ["LIGHTNING_USER_ORG"] = ORG_NAME
-os.environ["LIGHTNING_ORGANIZATION"] = ORG_NAME
-os.environ["LIGHTNING_TEAMSPACE"] = ORG_NAME
 
 
 # ==========================================
@@ -201,50 +201,50 @@ def process_subtitles(request: RebuildRequest):
 # CONTROL ENDPOINTS (via Official Lightning SDK)
 # ==========================================
 def _get_lightning_studio():
-    """Tenta l'aggancio dello Studio gestendo la sintassi ad organizzazione."""
+    """Tenta l'aggancio dello Studio via Teamspace/Organizzazione o istanziazione diretta."""
     last_err = "Nessun tentativo riuscito"
 
-    # Tentativo 1: Nome con prefisso organizzazione nel formato 'org/name'
+    # Metodo 1: Tramite la classe Teamspace dell'SDK (Consigliato per account organizzativi)
+    if Teamspace is not None:
+        try:
+            print(f"🔍 Metodo 1: Teamspace('{ORG_NAME}').get_studio('{LIGHTNING_STUDIO_NAME}')")
+            ts = Teamspace(ORG_NAME)
+            return ts.get_studio(LIGHTNING_STUDIO_NAME)
+        except Exception as err:
+            last_err = str(err)
+            print(f"⚠️ Metodo 1 fallito: {err}")
+
+        try:
+            print(f"🔍 Metodo 2: Teamspace('{ORG_NAME}').get_studio_by_id('{LIGHTNING_STUDIO_ID}')")
+            ts = Teamspace(ORG_NAME)
+            return ts.get_studio_by_id(LIGHTNING_STUDIO_ID)
+        except Exception as err:
+            last_err = str(err)
+            print(f"⚠️ Metodo 2 fallito: {err}")
+
+    # Metodo 3: Inizializzazione diretta Studio specificando sia user che teamspace/org
     try:
-        full_name = f"{ORG_NAME}/{LIGHTNING_STUDIO_NAME}"
-        print(f"🔍 Tentativo 1 Studio(name='{full_name}')")
-        return Studio(name=full_name)
+        print(f"🔍 Metodo 3: Studio(name='{LIGHTNING_STUDIO_NAME}', user='{USER_NAME}', teamspace='{ORG_NAME}')")
+        return Studio(name=LIGHTNING_STUDIO_NAME, user=USER_NAME, teamspace=ORG_NAME)
     except Exception as err:
         last_err = str(err)
-        print(f"⚠️ Tentativo 1 fallito: {err}")
+        print(f"⚠️ Metodo 3 fallito: {err}")
 
-    # Tentativo 2: Con kwargs org (se supportato dalla versione specifica dell'SDK)
+    # Metodo 4: Inizializzazione diretta con ID studio e utente
     try:
-        print(f"🔍 Tentativo 2 Studio(name='{LIGHTNING_STUDIO_NAME}', teamspace='{ORG_NAME}')")
-        return Studio(name=LIGHTNING_STUDIO_NAME, teamspace=ORG_NAME)
+        print(f"🔍 Metodo 4: Studio(name='{LIGHTNING_STUDIO_ID}', user='{USER_NAME}')")
+        return Studio(name=LIGHTNING_STUDIO_ID, user=USER_NAME)
     except Exception as err:
         last_err = str(err)
-        print(f"⚠️ Tentativo 2 fallito: {err}")
+        print(f"⚠️ Metodo 4 fallito: {err}")
 
-    # Tentativo 3: Con parametro extra org se accettato
+    # Metodo 5: Costruttore minimale
     try:
-        print(f"🔍 Tentativo 3 Studio(name='{LIGHTNING_STUDIO_NAME}', org='{ORG_NAME}')")
-        return Studio(name=LIGHTNING_STUDIO_NAME, org=ORG_NAME)
-    except Exception as err:
-        last_err = str(err)
-        print(f"⚠️ Tentativo 3 fallito: {err}")
-
-    # Tentativo 4: Usando l'ID con prefisso organizzazione
-    try:
-        full_id = f"{ORG_NAME}/{LIGHTNING_STUDIO_ID}"
-        print(f"🔍 Tentativo 4 Studio(name='{full_id}')")
-        return Studio(name=full_id)
-    except Exception as err:
-        last_err = str(err)
-        print(f"⚠️ Tentativo 4 fallito: {err}")
-
-    # Tentativo 5: Solo ID con contesto ambientale caricato
-    try:
-        print(f"🔍 Tentativo 5 Studio('{LIGHTNING_STUDIO_ID}')")
+        print(f"🔍 Metodo 5: Studio('{LIGHTNING_STUDIO_ID}')")
         return Studio(LIGHTNING_STUDIO_ID)
     except Exception as err:
         last_err = str(err)
-        print(f"⚠️ Tentativo 5 fallito: {err}")
+        print(f"⚠️ Metodo 5 fallito: {err}")
 
     raise Exception(f"Impossibile collegare lo Studio tramite SDK. Errore finale: {last_err}")
 
