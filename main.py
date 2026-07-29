@@ -3,7 +3,7 @@ import re
 import httpx
 from typing import Dict, Any, Optional
 
-from fastapi import FastAPI, HTTPException, Header, Depends, File, UploadFile
+from fastapi import FastAPI, HTTPException, Header, Depends, File, UploadFile, BackgroundTasks
 from pydantic import BaseModel
 
 try:
@@ -53,7 +53,7 @@ def read_root():
 
 
 # ==========================================
-# ENDPOINT DI TRASCRIZIONE CORRETTO
+# ENDPOINT DI TRASCRIZIONE CORRETTO (CON HEADER AUTH)
 # ==========================================
 @app.post("/transcribe")
 @app.post("/api/v1/transcribe")
@@ -67,14 +67,18 @@ async def transcribe_audio(
         
     base_url = LIGHTNING_STUDIO_URL.rstrip('/')
     
-    # Prove di fallback: inoltra prima a /api/v1/transcribe, poi a /transcribe se fallisce
     endpoints_to_try = [
         f"{base_url}/api/v1/transcribe",
         f"{base_url}/transcribe"
     ]
 
     content = await file.read()
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    
+    # PASSAGGIO CHIAVE: Includiamo l'header Authorization per autenticarci con lo Studio!
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Authorization": f"Bearer {APP_SECRET_KEY}"
+    }
     last_error = ""
 
     # Timeout a 600 secondi (10 minuti) per elaborazioni GPU estese
@@ -95,7 +99,6 @@ async def transcribe_audio(
                 last_error = str(e)
                 print(f"❌ Errore durante l'invio a {target_url}: {e}")
 
-    # Se entrambi gli endpoint falliscono
     raise HTTPException(
         status_code=500, 
         detail=f"Errore proxy verso Lightning Studio. Dettaglio: {last_error}"
@@ -211,7 +214,7 @@ def process_subtitles(request: RebuildRequest, authorized: None = Depends(verify
 
 
 # ==========================================
-# CONTROL ENDPOINTS (Exact Path Match)
+# CONTROL ENDPOINTS
 # ==========================================
 def _get_studio_instance():
     if Studio is None:
@@ -241,16 +244,31 @@ def _get_studio_instance():
     raise Exception(" | ".join(errors))
 
 
+def _async_start_task():
+    """Funzione helper per avviare lo Studio in background."""
+    try:
+        s = _get_studio_instance()
+        s.start()
+        print("✅ Studio avviato in background con successo!")
+    except Exception as e:
+        print(f"❌ Errore durante l'avvio in background dello Studio: {e}")
+
+
 @app.post("/api/v1/studio/start")
-async def start_studio(authorized: None = Depends(verify_token)):
+async def start_studio(
+    background_tasks: BackgroundTasks, 
+    authorized: None = Depends(verify_token)
+):
     if not LIGHTNING_API_KEY:
         raise HTTPException(status_code=500, detail="LIGHTNING_API_KEY mancante nelle Environment Variables di Render.")
 
     try:
-        print("🚀 Avvio Studio in corso...")
-        s = _get_studio_instance()
-        s.start()
-        return {"status": "success", "message": "Studio avviato con successo!"}
+        print("🚀 Invio comando di avvio Studio in background...")
+        background_tasks.add_task(_async_start_task)
+        return {
+            "status": "starting",
+            "message": "Studio in fase di avvio..."
+        }
     except Exception as e:
         print(f"❌ Errore START Studio: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Errore durante l'avvio dello Studio: {str(e)}")
