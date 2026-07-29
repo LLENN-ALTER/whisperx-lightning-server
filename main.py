@@ -53,7 +53,7 @@ def read_root():
 
 
 # ==========================================
-# ENDPOINT DI TRASCRIZIONE CORRETTO
+# ENDPOINT DI TRASCRIZIONE DEFINITIVO
 # ==========================================
 @app.post("/transcribe")
 @app.post("/api/v1/transcribe")
@@ -61,54 +61,60 @@ async def transcribe_audio(
     file: UploadFile = File(...),
     authorized: None = Depends(verify_token)
 ):
-    """Inoltra il file audio allo Studio Lightning AI per la trascrizione reale."""
+    """Inoltra il file audio dall'app Android allo Studio Lightning AI per la trascrizione reale."""
     if not LIGHTNING_STUDIO_URL:
         raise HTTPException(status_code=500, detail="LIGHTNING_STUDIO_URL non configurato su Render.")
         
     base_url = LIGHTNING_STUDIO_URL.rstrip('/')
-    
-    endpoints_to_try = [
-        f"{base_url}/api/v1/transcribe",
-        f"{base_url}/transcribe"
-    ]
+    target_url = f"{base_url}/api/v1/transcribe"
 
-    # Leggiamo il contenuto binario del file in memoria
-    content = await file.read()
-    filename = file.filename or "audio.m4a"
-    content_type = file.content_type if file.content_type else "application/octet-stream"
+    # 1. Lettura completa dei byte inviati dall'app Android
+    file_bytes = await file.read()
+    
+    if not file_bytes or len(file_bytes) == 0:
+        print("❌ ERRORE: Il file ricevuto dall'app Android è vuoto (0 byte)!")
+        raise HTTPException(status_code=400, detail="Il file audio inviato è vuoto.")
+
+    # 2. Normalizzazione del nome file e del Content-Type
+    original_name = file.filename or "recording.m4a"
+    content_type = file.content_type if (file.content_type and "/" in file.content_type) else "audio/m4a"
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
         "Authorization": f"Bearer {APP_SECRET_KEY}"
     }
-    last_error = ""
 
-    # Timeout a 600 secondi (10 minuti) per elaborazioni GPU estese
+    print(f"🚀 Proxy -> Invio file '{original_name}' ({len(file_bytes)} byte, type: {content_type}) a Lightning ({target_url})...")
+
+    # 3. Costruzione multipart esplicita per httpx
+    files_payload = {
+        "file": (original_name, file_bytes, content_type)
+    }
+
+    # 4. Invio HTTP a Lightning AI senza loop ciechi
     async with httpx.AsyncClient(timeout=600.0, follow_redirects=True) as client:
-        for target_url in endpoints_to_try:
-            try:
-                print(f"🚀 Tentativo di invio file a Lightning: {target_url}")
-                
-                # Formattazione corretta dei file per httpx: (nomefile, byte_grezzi, tipo_mime)
-                files = {
-                    "file": (filename, content, content_type)
-                }
-                
-                response = await client.post(target_url, files=files, headers=headers)
-                
-                print(f"📩 Risposta da Lightning ({target_url}): {response.status_code}")
-                if response.status_code == 200:
-                    return response.json()
-                else:
-                    last_error = f"HTTP {response.status_code}: {response.text}"
-            except Exception as e:
-                last_error = str(e)
-                print(f"❌ Errore durante l'invio a {target_url}: {e}")
+        try:
+            response = await client.post(target_url, files=files_payload, headers=headers)
+            
+            print(f"📩 Risposta ricevuta da Lightning: Status {response.status_code}")
+            
+            if response.status_code == 200:
+                return response.json()
+            
+            error_details = response.text
+            print(f"⚠️ LIGHTNING REJECTED REQUEST ({response.status_code}): {error_details}")
+            
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"Lightning Server Error ({response.status_code}): {error_details}"
+            )
 
-    raise HTTPException(
-        status_code=500, 
-        detail=f"Errore proxy verso Lightning Studio. Dettaglio: {last_error}"
-    )
+        except httpx.RequestError as exc:
+            print(f"❌ Errore di connessione tra Render e Lightning: {exc}")
+            raise HTTPException(
+                status_code=502,
+                detail=f"Impossibile raggiungere Lightning Studio: {str(exc)}"
+            )
 
 
 # ==========================================
