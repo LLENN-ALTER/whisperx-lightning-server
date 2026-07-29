@@ -1,4 +1,5 @@
 import os
+import re
 import httpx
 from typing import Dict, Any, Optional
 
@@ -26,7 +27,11 @@ APP_SECRET_KEY = os.getenv("APP_SECRET_KEY", "SRT_SUITE_SECRET_TOKEN_2026")
 LIGHTNING_API_KEY = os.getenv("LIGHTNING_API_KEY", "")
 LIGHTNING_STUDIO_ID = os.getenv("LIGHTNING_STUDIO_ID", "01kyf6tebbywg1d835f6ptkgt5")
 LIGHTNING_STUDIO_NAME = os.getenv("LIGHTNING_STUDIO_NAME", "gpu-studio")
-LIGHTNING_STUDIO_URL = os.getenv("LIGHTNING_STUDIO_URL", "https://8001-01kyf6tebbywg1d835f6ptkgt5.cloudspaces.litng.ai")
+
+# Pulisce automaticamente l'URL rimuovendo formattazione markdown [url](url) o spazi/parentesi residue
+raw_url_env = os.getenv("LIGHTNING_STUDIO_URL", "https://8001-01kyf6tebbywg1d835f6ptkgt5.cloudspaces.litng.ai")
+match = re.search(r'https?://[^\s\)\]]+', raw_url_env)
+LIGHTNING_STUDIO_URL = match.group(0) if match else raw_url_env.strip()
 
 USER_NAME = "xmauri99"
 ORG_NAME = "xmauri99-org"
@@ -260,7 +265,13 @@ async def get_status(authorized: None = Depends(verify_token)):
     if not LIGHTNING_STUDIO_URL:
         return {"status": "stopped", "stage": "Not Configured"}
     
-    target_url = f"{LIGHTNING_STUDIO_URL.rstrip('/')}/health"
+    # Sanificazione dell'URL per prevenire errori di protocollo
+    clean_url = LIGHTNING_STUDIO_URL.strip()
+    match = re.search(r'https?://[^\s\)\]]+', clean_url)
+    if match:
+        clean_url = match.group(0)
+
+    target_url = f"{clean_url.rstrip('/')}/health"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     
     # Controlla se lo Studio su Lightning è raggiungibile (porta 8001)
