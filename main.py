@@ -163,10 +163,11 @@ async def transcribe_audio(file: UploadFile = File(...)):
     try:
         content = await file.read()
         target_url = f"{LIGHTNING_STUDIO_URL.rstrip('/')}/transcribe"
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         
-        async with httpx.AsyncClient(timeout=600.0) as client:
+        async with httpx.AsyncClient(timeout=600.0, follow_redirects=True) as client:
             files = {"file": (file.filename, content, file.content_type)}
-            response = await client.post(target_url, files=files)
+            response = await client.post(target_url, files=files, headers=headers)
         
         if response.status_code != 200:
             raise HTTPException(status_code=response.status_code, detail=response.text)
@@ -259,14 +260,18 @@ async def get_status(authorized: None = Depends(verify_token)):
     if not LIGHTNING_STUDIO_URL:
         return {"status": "stopped", "stage": "Not Configured"}
     
+    target_url = f"{LIGHTNING_STUDIO_URL.rstrip('/')}/health"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    
     # Controlla se lo Studio su Lightning è raggiungibile (porta 8001)
     try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
-            res = await client.get(f"{LIGHTNING_STUDIO_URL.rstrip('/')}/health")
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+            res = await client.get(target_url, headers=headers)
+            print(f"[STATUS CHECK] Risposta da {target_url}: STATUS {res.status_code}")
             if res.status_code == 200:
                 return {"status": "running", "stage": "Running"}
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[STATUS CHECK ERROR] Errore durante il check a {target_url}: {e}")
         
     return {"status": "stopped", "stage": "Stopped"}
 
