@@ -55,7 +55,6 @@ def read_root():
 # ==========================================
 # ENDPOINT DI TRASCRIZIONE DEFINITIVO
 # ==========================================
-@app.post("/transcribe")
 @app.post("/api/v1/transcribe")
 async def transcribe_audio(
     file: UploadFile = File(...),
@@ -91,7 +90,7 @@ async def transcribe_audio(
         "file": (original_name, file_bytes, content_type)
     }
 
-    # 4. Invio HTTP a Lightning AI senza loop ciechi
+    # 4. Invio HTTP a Lightning AI (Timeout impostato a 600s per elaborazioni lunghe)
     async with httpx.AsyncClient(timeout=600.0, follow_redirects=True) as client:
         try:
             response = await client.post(target_url, files=files_payload, headers=headers)
