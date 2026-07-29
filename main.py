@@ -53,7 +53,7 @@ def read_root():
 
 
 # ==========================================
-# ENDPOINT DI TRASCRIZIONE CORRETTO (CON HEADER AUTH)
+# ENDPOINT DI TRASCRIZIONE CORRETTO
 # ==========================================
 @app.post("/transcribe")
 @app.post("/api/v1/transcribe")
@@ -72,9 +72,11 @@ async def transcribe_audio(
         f"{base_url}/transcribe"
     ]
 
+    # Leggiamo il contenuto binario del file in memoria
     content = await file.read()
-    
-    # PASSAGGIO CHIAVE: Includiamo l'header Authorization per autenticarci con lo Studio!
+    filename = file.filename or "audio.m4a"
+    content_type = file.content_type if file.content_type else "application/octet-stream"
+
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
         "Authorization": f"Bearer {APP_SECRET_KEY}"
@@ -86,7 +88,11 @@ async def transcribe_audio(
         for target_url in endpoints_to_try:
             try:
                 print(f"🚀 Tentativo di invio file a Lightning: {target_url}")
-                files = {"file": (file.filename, content, file.content_type or "audio/m4a")}
+                
+                # Formattazione corretta dei file per httpx: (nomefile, byte_grezzi, tipo_mime)
+                files = {
+                    "file": (filename, content, content_type)
+                }
                 
                 response = await client.post(target_url, files=files, headers=headers)
                 
