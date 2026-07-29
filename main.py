@@ -6,15 +6,11 @@ from typing import Dict, Any, Optional
 from fastapi import FastAPI, HTTPException, Header, Depends, File, UploadFile
 from pydantic import BaseModel
 
-# Import SDK ufficiale Lightning
 try:
     from lightning_sdk import Studio
 except ImportError:
     Studio = None
 
-# ==========================================
-# INIZIALIZZAZIONE FASTAPI
-# ==========================================
 app = FastAPI(
     title="SRT Suite - Render Proxy & Studio Controller",
     version="1.0.0"
@@ -28,7 +24,7 @@ LIGHTNING_API_KEY = os.getenv("LIGHTNING_API_KEY", "")
 LIGHTNING_STUDIO_ID = os.getenv("LIGHTNING_STUDIO_ID", "01kyf6tebbywg1d835f6ptkgt5")
 LIGHTNING_STUDIO_NAME = os.getenv("LIGHTNING_STUDIO_NAME", "gpu-studio")
 
-# Pulisce automaticamente l'URL rimuovendo formattazione markdown [url](url) o spazi/parentesi residue
+# Pulisce l'URL
 raw_url_env = os.getenv("LIGHTNING_STUDIO_URL", "https://8001-01kyf6tebbywg1d835f6ptkgt5.cloudspaces.litng.ai")
 match = re.search(r'https?://[^\s\)\]]+', raw_url_env)
 LIGHTNING_STUDIO_URL = match.group(0) if match else raw_url_env.strip()
@@ -41,11 +37,81 @@ if LIGHTNING_API_KEY:
     os.environ["LIGHTNING_API_KEY"] = LIGHTNING_API_KEY
 
 
+def verify_token(authorization: str = Header(None)):
+    """Verifica che la richiesta arrivi dall'app SRT Suite autorizzata."""
+    if not authorization or authorization != f"Bearer {APP_SECRET_KEY}":
+        raise HTTPException(
+            status_code=401, 
+            detail="Non autorizzato. Token di sicurezza mancante o errato."
+        )
+
+
+@app.get("/")
+@app.get("/health")
+def read_root():
+    return {"status": "online", "service": "SRT Suite Proxy API"}
+
+
+# ==========================================
+# ENDPOINT DI TRASCRIZIONE CORRETTO
+# ==========================================
+@app.post("/transcribe")
+@app.post("/api/v1/transcribe")
+async def transcribe_audio(
+    file: UploadFile = File(...),
+    authorized: None = Depends(verify_token)
+):
+    """Inoltra il file audio allo Studio Lightning AI per la trascrizione reale."""
+    if not LIGHTNING_STUDIO_URL:
+        raise HTTPException(status_code=500, detail="LIGHTNING_STUDIO_URL non configurato su Render.")
+        
+    base_url = LIGHTNING_STUDIO_URL.rstrip('/')
+    
+    # Prove di fallback: inoltra prima a /api/v1/transcribe, poi a /transcribe se fallisce
+    endpoints_to_try = [
+        f"{base_url}/api/v1/transcribe",
+        f"{base_url}/transcribe"
+    ]
+
+    content = await file.read()
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    last_error = ""
+
+    # Timeout a 600 secondi (10 minuti) per elaborazioni GPU estese
+    async with httpx.AsyncClient(timeout=600.0, follow_redirects=True) as client:
+        for target_url in endpoints_to_try:
+            try:
+                print(f"🚀 Tentativo di invio file a Lightning: {target_url}")
+                files = {"file": (file.filename, content, file.content_type or "audio/m4a")}
+                
+                response = await client.post(target_url, files=files, headers=headers)
+                
+                print(f"📩 Risposta da Lightning ({target_url}): {response.status_code}")
+                if response.status_code == 200:
+                    return response.json()
+                else:
+                    last_error = f"HTTP {response.status_code}: {response.text}"
+            except Exception as e:
+                last_error = str(e)
+                print(f"❌ Errore durante l'invio a {target_url}: {e}")
+
+    # Se entrambi gli endpoint falliscono
+    raise HTTPException(
+        status_code=500, 
+        detail=f"Errore proxy verso Lightning Studio. Dettaglio: {last_error}"
+    )
+
+
 # ==========================================
 # FUNZIONE DI SMART REBUILDING SOTTOTITOLI
 # ==========================================
+class RebuildRequest(BaseModel):
+    result: Dict[str, Any]
+    max_chars_per_line: Optional[int] = 38
+    max_gap_seconds: Optional[float] = 0.6
+
+
 def rebuild_segments_smart(result: dict, max_chars_per_line: int = 38, max_gap_seconds: float = 0.6):
-    """Riorganizza i sottotitoli a livello di singola parola per MAX 2 RIGHE."""
     all_words = []
     
     for segment in result.get("segments", []):
@@ -131,59 +197,8 @@ def rebuild_segments_smart(result: dict, max_chars_per_line: int = 38, max_gap_s
     return new_segments
 
 
-# ==========================================
-# SCHEMI DATI PER GLI ENDPOINT FASTAPI
-# ==========================================
-class RebuildRequest(BaseModel):
-    result: Dict[str, Any]
-    max_chars_per_line: Optional[int] = 38
-    max_gap_seconds: Optional[float] = 0.6
-
-
-# ==========================================
-# ENDPOINT API (Proxy & Controllo Studio)
-# ==========================================
-def verify_token(authorization: str = Header(None)):
-    """Verifica che la richiesta arrivi dall'app SRT Suite autorizzata."""
-    if not authorization or authorization != f"Bearer {APP_SECRET_KEY}":
-        raise HTTPException(
-            status_code=401, 
-            detail="Non autorizzato. Token di sicurezza mancante o errato."
-        )
-
-
-@app.get("/")
-@app.get("/health")
-def read_root():
-    return {"status": "online", "service": "SRT Suite Proxy API"}
-
-
-@app.post("/transcribe")
-@app.post("/api/v1/transcribe")
-async def transcribe_audio(file: UploadFile = File(...)):
-    """Inoltra il file audio allo Studio Lightning AI per la trascrizione reale."""
-    if not LIGHTNING_STUDIO_URL:
-        raise HTTPException(status_code=500, detail="LIGHTNING_STUDIO_URL non configurato su Render.")
-        
-    try:
-        content = await file.read()
-        target_url = f"{LIGHTNING_STUDIO_URL.rstrip('/')}/transcribe"
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-        
-        async with httpx.AsyncClient(timeout=600.0, follow_redirects=True) as client:
-            files = {"file": (file.filename, content, file.content_type)}
-            response = await client.post(target_url, files=files, headers=headers)
-        
-        if response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail=response.text)
-            
-        return response.json()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Errore proxy verso Lightning Studio: {str(e)}")
-
-
 @app.post("/api/v1/subtitles/rebuild")
-def process_subtitles(request: RebuildRequest):
+def process_subtitles(request: RebuildRequest, authorized: None = Depends(verify_token)):
     try:
         updated_segments = rebuild_segments_smart(
             result=request.result,
@@ -199,13 +214,11 @@ def process_subtitles(request: RebuildRequest):
 # CONTROL ENDPOINTS (Exact Path Match)
 # ==========================================
 def _get_studio_instance():
-    """Istanzia lo Studio usando la struttura esatta get-gpu-project."""
     if Studio is None:
         raise Exception("lightning-sdk non installato.")
 
     errors = []
 
-    # Tentativo 1: Percorso completo xmauri99-org/get-gpu-project/gpu-studio
     try:
         full_path = f"{ORG_NAME}/{TEAMSPACE_NAME}/{LIGHTNING_STUDIO_NAME}"
         print(f"🔍 Tentativo 1: Studio('{full_path}')")
@@ -213,14 +226,12 @@ def _get_studio_instance():
     except Exception as e:
         errors.append(f"T1: {e}")
 
-    # Tentativo 2: Nome + teamspace esplicito + org
     try:
         print(f"🔍 Tentativo 2: Studio('{LIGHTNING_STUDIO_NAME}', teamspace='{TEAMSPACE_NAME}', org='{ORG_NAME}')")
         return Studio(name=LIGHTNING_STUDIO_NAME, teamspace=TEAMSPACE_NAME, org=ORG_NAME)
     except Exception as e:
         errors.append(f"T2: {e}")
 
-    # Tentativo 3: Nome + teamspace esplicito senza org
     try:
         print(f"🔍 Tentativo 3: Studio('{LIGHTNING_STUDIO_NAME}', teamspace='{TEAMSPACE_NAME}')")
         return Studio(name=LIGHTNING_STUDIO_NAME, teamspace=TEAMSPACE_NAME)
@@ -265,7 +276,6 @@ async def get_status(authorized: None = Depends(verify_token)):
     if not LIGHTNING_STUDIO_URL:
         return {"status": "stopped", "stage": "Not Configured"}
     
-    # Sanificazione dell'URL per prevenire errori di protocollo
     clean_url = LIGHTNING_STUDIO_URL.strip()
     match = re.search(r'https?://[^\s\)\]]+', clean_url)
     if match:
@@ -274,7 +284,6 @@ async def get_status(authorized: None = Depends(verify_token)):
     target_url = f"{clean_url.rstrip('/')}/health"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     
-    # Controlla se lo Studio su Lightning è raggiungibile (porta 8001)
     try:
         async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
             res = await client.get(target_url, headers=headers)
