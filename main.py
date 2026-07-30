@@ -5,6 +5,7 @@ from urllib.parse import urlparse
 from typing import Dict, Any, Optional
 
 from fastapi import FastAPI, HTTPException, Header, Depends, File, UploadFile, BackgroundTasks
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 try:
@@ -58,14 +59,14 @@ def read_root():
 
 
 # ==========================================
-# ENDPOINT DI TRASCRIZIONE DEFINITIVO
+# ENDPOINT DI TRASCRIZIONE DEFINITIVO (PROXY IN STREAMING)
 # ==========================================
 @app.post("/api/v1/transcribe")
 async def transcribe_audio(
     file: UploadFile = File(...),
     authorized: None = Depends(verify_token)
 ):
-    """Inoltra il file audio dall'app Android allo Studio Lightning AI per la trascrizione reale."""
+    """Inoltra il file audio dall'app Android allo Studio Lightning AI per la trascrizione e fa il proxy dello stream NDJSON."""
     if not LIGHTNING_BASE_URL:
         raise HTTPException(status_code=500, detail="LIGHTNING_STUDIO_URL non configurato su Render.")
         
@@ -93,32 +94,43 @@ async def transcribe_audio(
         "file": (original_name, file_bytes, content_type)
     }
 
-    # Timeout configurato per connessioni lente e processi lunghi di WhisperX
-    custom_timeout = httpx.Timeout(connect=30.0, read=600.0, write=300.0, pool=30.0)
+    async def proxy_stream_generator():
+        # Nessun timeout di read per permettere le operazioni lunghe della GPU senza tagliare la connessione
+        timeout_settings = httpx.Timeout(connect=30.0, read=None, write=300.0, pool=30.0)
 
-    async with httpx.AsyncClient(timeout=custom_timeout, follow_redirects=True) as client:
         try:
-            response = await client.post(target_url, files=files_payload, headers=headers)
-            
-            print(f"📩 Risposta ricevuta da Lightning: Status {response.status_code}")
-            
-            if response.status_code == 200:
-                return response.json()
-            
-            error_details = response.text
-            print(f"⚠️ LIGHTNING REJECTED REQUEST ({response.status_code}): {error_details}")
-            
-            raise HTTPException(
-                status_code=response.status_code,
-                detail=f"Lightning Server Error ({response.status_code}): {error_details}"
-            )
+            async with httpx.AsyncClient(timeout=timeout_settings, follow_redirects=True) as client:
+                # Usiamo .stream() per leggere la risposta di Lightning mano a mano che arriva
+                async with client.stream("POST", target_url, files=files_payload, headers=headers) as response:
+                    
+                    print(f"📩 Inizio stream da Lightning: Status {response.status_code}")
+                    
+                    if response.status_code != 200:
+                        error_body = await response.aread()
+                        print(f"⚠️ LIGHTNING REJECTED REQUEST ({response.status_code}): {error_body.decode()}")
+                        # Facciamo lo yield dell'errore formattato come json line
+                        yield f'{{"status": "error", "log": "Lightning Server Error ({response.status_code})", "error": true}}\n'
+                        return
+
+                    # Legge e inolta ogni singola riga NDJSON al client Android (inclusi gli Heartbeat)
+                    async for line in response.aiter_lines():
+                        if line:
+                            yield line + "\n"
 
         except httpx.RequestError as exc:
-            print(f"❌ Errore di connessione tra Render e Lightning: {exc}")
-            raise HTTPException(
-                status_code=502,
-                detail=f"Impossibile raggiungere Lightning Studio: {str(exc)}"
-            )
+            print(f"❌ Errore di connessione proxy tra Render e Lightning: {exc}")
+            yield f'{{"status": "error", "log": "Impossibile raggiungere Lightning Studio: {str(exc)}", "error": true}}\n'
+
+    # Ritorna lo StreamingResponse assicurandosi che Render non faccia buffering
+    return StreamingResponse(
+        proxy_stream_generator(), 
+        media_type="application/x-ndjson",
+        headers={
+            "X-Accel-Buffering": "no",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive"
+        }
+    )
 
 
 # ==========================================
@@ -328,3 +340,4 @@ async def get_status(authorized: None = Depends(verify_token)):
 @app.get("/api/v1/credits")
 def get_credits(authorized: None = Depends(verify_token)):
     return {"status": "success", "credits": 14.21}
+
