@@ -1,6 +1,7 @@
 import os
 import re
 import httpx
+from urllib.parse import urlparse
 from typing import Dict, Any, Optional
 
 from fastapi import FastAPI, HTTPException, Header, Depends, File, UploadFile, BackgroundTasks
@@ -24,10 +25,14 @@ LIGHTNING_API_KEY = os.getenv("LIGHTNING_API_KEY", "")
 LIGHTNING_STUDIO_ID = os.getenv("LIGHTNING_STUDIO_ID", "01kyf6tebbywg1d835f6ptkgt5")
 LIGHTNING_STUDIO_NAME = os.getenv("LIGHTNING_STUDIO_NAME", "gpu-studio")
 
-# Pulisce l'URL
+# Pulisce ed estrae STRICTLY solo la Base URL (schema://host)
 raw_url_env = os.getenv("LIGHTNING_STUDIO_URL", "https://8001-01kyf6tebbywg1d835f6ptkgt5.cloudspaces.litng.ai")
 match = re.search(r'https?://[^\s\)\]]+', raw_url_env)
-LIGHTNING_STUDIO_URL = match.group(0) if match else raw_url_env.strip()
+extracted_url = match.group(0) if match else raw_url_env.strip()
+
+# Parsing pulito dell'origin base
+parsed_url = urlparse(extracted_url)
+LIGHTNING_BASE_URL = f"{parsed_url.scheme}://{parsed_url.netloc}"
 
 USER_NAME = "xmauri99"
 ORG_NAME = "xmauri99-org"
@@ -61,11 +66,10 @@ async def transcribe_audio(
     authorized: None = Depends(verify_token)
 ):
     """Inoltra il file audio dall'app Android allo Studio Lightning AI per la trascrizione reale."""
-    if not LIGHTNING_STUDIO_URL:
+    if not LIGHTNING_BASE_URL:
         raise HTTPException(status_code=500, detail="LIGHTNING_STUDIO_URL non configurato su Render.")
         
-    base_url = LIGHTNING_STUDIO_URL.rstrip('/')
-    target_url = f"{base_url}/api/v1/transcribe"
+    target_url = f"{LIGHTNING_BASE_URL}/api/v1/transcribe"
 
     # 1. Lettura completa dei byte inviati dall'app Android
     file_bytes = await file.read()
@@ -83,15 +87,16 @@ async def transcribe_audio(
         "Authorization": f"Bearer {APP_SECRET_KEY}"
     }
 
-    print(f"🚀 Proxy -> Invio file '{original_name}' ({len(file_bytes)} byte, type: {content_type}) a Lightning ({target_url})...")
+    print(f"🚀 Proxy -> Invio file '{original_name}' ({len(file_bytes)} byte) a Lightning ({target_url})...")
 
-    # 3. Costruzione multipart esplicita per httpx
     files_payload = {
         "file": (original_name, file_bytes, content_type)
     }
 
-    # 4. Invio HTTP a Lightning AI (Timeout impostato a 600s per elaborazioni lunghe)
-    async with httpx.AsyncClient(timeout=600.0, follow_redirects=True) as client:
+    # Timeout configurato per connessioni lente e processi lunghi di WhisperX
+    custom_timeout = httpx.Timeout(connect=30.0, read=600.0, write=300.0, pool=30.0)
+
+    async with httpx.AsyncClient(timeout=custom_timeout, follow_redirects=True) as client:
         try:
             response = await client.post(target_url, files=files_payload, headers=headers)
             
@@ -302,15 +307,10 @@ async def stop_studio(authorized: None = Depends(verify_token)):
 
 @app.get("/api/v1/studio/status")
 async def get_status(authorized: None = Depends(verify_token)):
-    if not LIGHTNING_STUDIO_URL:
+    if not LIGHTNING_BASE_URL:
         return {"status": "stopped", "stage": "Not Configured"}
-    
-    clean_url = LIGHTNING_STUDIO_URL.strip()
-    match = re.search(r'https?://[^\s\)\]]+', clean_url)
-    if match:
-        clean_url = match.group(0)
 
-    target_url = f"{clean_url.rstrip('/')}/health"
+    target_url = f"{LIGHTNING_BASE_URL}/health"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     
     try:
